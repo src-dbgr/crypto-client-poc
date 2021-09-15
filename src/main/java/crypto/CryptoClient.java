@@ -40,7 +40,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.sam.coin.model.Coin;
 
-public class Parser {
+public class CryptoClient {
 
 	static String[] coins = new String[] { "ethereum", "stellar", "cardano", "zcash", "algorand", "bitcoin",
 			"chainlink", "Polkadot", "THETA" };
@@ -393,10 +393,10 @@ public class Parser {
 	}
 
 	public static void main(String[] args) throws Exception {
-//		parseCoingeckoUpdatable("testsource.json", "testtarget.json", true); // fetches the latest coin list
-//		parseCoingecko("coingecko.json", "portfoliocoingecko.json"); // assumes the a coin list is in place
+////		parseCoingeckoUpdatable("testsource.json", "testtarget.json", true); // fetches the latest coin list
+////		parseCoingecko("coingecko.json", "portfoliocoingecko.json"); // assumes the a coin list is in place
 		updateCryptos();
-//		fetchAllHistoricalData(cryptoIds, 61);
+////		fetchAllHistoricalData(cryptoIds, 61);
 	}
 
 }
