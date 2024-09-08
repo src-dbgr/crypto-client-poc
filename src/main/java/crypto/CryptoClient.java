@@ -3,6 +3,8 @@ package crypto;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.coin.model.Coin;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -19,8 +21,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * A client for fetching and updating cryptocurrency data from Coingecko API.
@@ -28,7 +28,7 @@ import java.util.logging.Logger;
  */
 public class CryptoClient {
 
-	private static final Logger LOG = Logger.getLogger(CryptoClient.class.getName());
+	private static final Logger LOG = LoggerFactory.getLogger(CryptoClient.class);
 	private static final String BACKEND_URL = "http://localhost:8080/api/v1/coin";
 	private static final String COINGECKO_API_URL = "https://api.coingecko.com/api/v3";
 	private static final int MAX_RETRIES = 10;
@@ -72,7 +72,7 @@ public class CryptoClient {
 					try {
 						processCryptoData(formattedUrl, cryptoId, cryptoName, cryptoSymbol);
 					} catch (Exception e) {
-						LOG.log(Level.SEVERE, "Error processing crypto data for " + cryptoId, e);
+						LOG.error("Error processing crypto data for " + cryptoId, e);
 					}
 				}).join(); // Wait for each crypto to complete before moving to the next one
 
@@ -94,17 +94,20 @@ public class CryptoClient {
 						sendCoinDataToBackend(coin);
 						return;
 					} else {
-						LOG.warning("No data returned for " + cryptoId);
+						LOG.warn("No data returned for " + cryptoId);
 						return;
 					}
 				} else {
+					if(response.statusCode() == 429){
+						LOG.info("Rate limit was hit...");
+					}
 					throw new IOException("HTTP status code: " + response.statusCode() + " for " + cryptoId);
 				}
 			} catch (Exception e) {
 				retryCount++;
-				LOG.log(Level.WARNING, "Error occurred for " + cryptoId + ": " + e.getMessage(), e);
+				LOG.warn("Issue occurred for " + cryptoId + ": " + e.getMessage(), e);
 				if (retryCount >= MAX_RETRIES) {
-					LOG.severe("Max retries reached for " + cryptoId + ". Moving to next coin.");
+					LOG.error("Max retries reached for " + cryptoId + ". Moving to next coin.");
 					return;
 				} else {
 					LOG.info("Retrying in " + (RATE_LIMIT_DELAY * retryCount) + " milliseconds...");
@@ -150,7 +153,7 @@ public class CryptoClient {
 					try {
 						processHistoricalData(url, coinId, finalStartDate);
 					} catch (Exception e) {
-						LOG.log(Level.SEVERE, "Error processing historical data for " + coinId + " on " + dateStr, e);
+						LOG.error("Error processing historical data for " + coinId + " on " + dateStr, e);
 					}
 				}).join(); // Wait for each date to complete before moving to the next one
 
@@ -170,16 +173,16 @@ public class CryptoClient {
 					sendCoinDataToBackend(coin);
 					return;
 				} else if (response.statusCode() == 401 || response.statusCode() == 403) {
-					LOG.warning("Skipping due to lack of permission for " + coinId + " on " + date);
+					LOG.warn("Skipping due to lack of permission for " + coinId + " on " + date);
 					return;
 				} else {
 					throw new IOException("HTTP error code: " + response.statusCode() + " for " + coinId + " on " + date);
 				}
 			} catch (Exception e) {
 				retryCount++;
-				LOG.log(Level.WARNING, "Error occurred for " + coinId + " on " + date + ": " + e.getMessage(), e);
+				LOG.warn("Error occurred for " + coinId + " on " + date + ": " + e.getMessage(), e);
 				if (retryCount >= MAX_RETRIES) {
-					LOG.severe("Max retries reached for " + coinId + " on " + date + ". Moving to next date.");
+					LOG.error("Max retries reached for " + coinId + " on " + date + ". Moving to next date.");
 					return;
 				} else {
 					LOG.info("Retrying in " + (RATE_LIMIT_DELAY * retryCount) + " milliseconds...");
@@ -206,7 +209,7 @@ public class CryptoClient {
 					try {
 						processHistoricalData(url, coinId, date);
 					} catch (Exception e) {
-						LOG.log(Level.SEVERE, "Error processing historical data for " + coinId + " on " + dateString, e);
+						LOG.error("Error processing historical data for " + coinId + " on " + dateString, e);
 					}
 				}).join(); // Wait for each date to complete before moving to the next one
 
@@ -327,7 +330,8 @@ public class CryptoClient {
 
 	private static void sendCoinDataToBackend(Coin coin) {
 		try {
-			String jsonCoin = OBJECT_MAPPER.writeValueAsString(coin);
+			String jsonCoin = OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(coin);
+			LOG.info("Sending coin data to backend:\n" + jsonCoin);
 			HttpRequest request = HttpRequest.newBuilder()
 					.uri(URI.create(BACKEND_URL))
 					.header("Content-Type", "application/json")
@@ -337,11 +341,11 @@ public class CryptoClient {
 			LOG.info("Sending coin data to backend: " + request);
 			HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
 			if (response.statusCode() < 200 || response.statusCode() >= 300) {
-				LOG.warning("Error sending data to backend. HTTP status: " + response.statusCode());
+				LOG.warn("Error sending data to backend. HTTP status: " + response.statusCode());
 			}
 			LOG.info("Backend response: " + response);
 		} catch (Exception e) {
-			LOG.log(Level.SEVERE, "Error sending coin data to backend", e);
+			LOG.error("Error sending coin data to backend", e);
 		}
 	}
 
@@ -407,7 +411,7 @@ public class CryptoClient {
 			LOG.info("All historical data fetch completed.");
 
 		} catch (Exception e) {
-			LOG.log(Level.SEVERE, "An error occurred", e);
+			LOG.error("An error occurred", e);
 		}
 	}
 }
