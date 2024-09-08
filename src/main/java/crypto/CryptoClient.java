@@ -514,88 +514,99 @@ public class CryptoClient {
 
 	public static int scounter = 0;
 
-	public static void updateCryptos()
-			throws InterruptedException, JsonParseException, JsonMappingException, IOException {
-		// update cryptolist
+	public static void updateCryptos() throws InterruptedException, JsonParseException, JsonMappingException, IOException {
+		// Aktualisiere die Kryptoliste
 		parseCoingecko("coingecko.json", "portfoliocoingecko.json");
 
-		int totalFailCounter = 0;
 		String url = "https://api.coingecko.com/api/v3/simple/price?ids=%crypto%&vs_currencies=eur%2Cbtc%2Ceth%2Cusd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true";
 
-		try (InputStream in = Thread.currentThread().getContextClassLoader()
-				.getResourceAsStream("portfoliocoingecko.json")) {
-			// pass InputStream to JSON-Library, e.g. using Jackson
+		try (InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream("portfoliocoingecko.json")) {
 			ObjectMapper mapper = new ObjectMapper();
 			JsonNode coinsNode = mapper.readValue(in, JsonNode.class);
+
 			for (JsonNode crypto : coinsNode) {
-				String cryptoCoinId = crypto.get("id").toString().replace("\"", "");
-				String cryptoCoinName = crypto.get("name").toString().replace("\"", "");
-				String cryptoCoinSymbol = crypto.get("symbol").toString().replace("\"", "");
+				String cryptoCoinId = crypto.get("id").asText();
+				String cryptoCoinName = crypto.get("name").asText();
+				String cryptoCoinSymbol = crypto.get("symbol").asText();
 
-				int failCounter = 0;
-				for (int i = 0; i < 1; i++) {
+				int retries = 0;
+				int waitTime = INITIAL_WAIT_TIME;
+
+				while (retries < MAX_RETRIES) {
 					try {
-						Thread.sleep(600);
-						String currentCoinDetails = getCoingecko(url.replace("%crypto%", cryptoCoinId));
-						JsonNode currentCoinDetailsJsonNode = mapper.readValue(currentCoinDetails, JsonNode.class);
-						JsonNode currentCoinJsonNodeDetails = currentCoinDetailsJsonNode.get(cryptoCoinId);
-						JsonNode coinLastUpdatedDate = currentCoinJsonNodeDetails.get("last_updated_at");
-						long longdate = coinLastUpdatedDate.asLong();
-						Timestamp timestmp = new Timestamp(longdate * 1000);
-						System.out.println(timestmp);
+						Thread.sleep(waitTime);
+						HttpResponse<String> response = getCoingeckoResponse(url.replace("%crypto%", cryptoCoinId));
 
-						Coin coin = new Coin();
-						coin.setCoinId(cryptoCoinId);
-						coin.setCoinName(cryptoCoinName);
-						coin.setSymbol(cryptoCoinSymbol);
-						coin.setTimestamp(timestmp);
-						coin.setPriceEur(currentCoinJsonNodeDetails.get("eur").decimalValue());
-						coin.setPriceUsd(currentCoinJsonNodeDetails.get("usd").decimalValue());
-						coin.setPriceBtc(currentCoinJsonNodeDetails.get("btc").decimalValue());
-						coin.setPriceEth(currentCoinJsonNodeDetails.get("eth").decimalValue());
-						coin.setMarketCapEur(currentCoinJsonNodeDetails.get("eur_market_cap").decimalValue());
-						coin.setMarketCapUsd(currentCoinJsonNodeDetails.get("usd_market_cap").decimalValue());
-						coin.setMarketCapBtc(currentCoinJsonNodeDetails.get("btc_market_cap").decimalValue());
-						coin.setMarketCapEth(currentCoinJsonNodeDetails.get("eth_market_cap").decimalValue());
-						coin.setTotalVolumeEur(currentCoinJsonNodeDetails.get("eur_24h_vol").decimalValue());
-						coin.setTotalVolumeUsd(currentCoinJsonNodeDetails.get("usd_24h_vol").decimalValue());
-						coin.setTotalVolumeBtc(currentCoinJsonNodeDetails.get("btc_24h_vol").decimalValue());
-						coin.setTotalVolumeEth(currentCoinJsonNodeDetails.get("eth_24h_vol").decimalValue());
-						String jsonString = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(coin);
+						int statusCode = response.statusCode();
+						if (statusCode >= 200 && statusCode < 300) {
+							String currentCoinDetails = response.body();
+							JsonNode currentCoinDetailsJsonNode = mapper.readValue(currentCoinDetails, JsonNode.class);
+							JsonNode currentCoinJsonNodeDetails = currentCoinDetailsJsonNode.get(cryptoCoinId);
 
-						System.out.println(jsonString);
+							if (currentCoinJsonNodeDetails == null) {
+								throw new RuntimeException("Keine Daten zurückgegeben für " + cryptoCoinId);
+							}
 
-						post("http://localhost:8080/api/v1/coin", jsonString);
-						failCounter = 0;
+							long longdate = currentCoinJsonNodeDetails.get("last_updated_at").asLong();
+							Timestamp timestmp = new Timestamp(longdate * 1000);
+
+							Coin coin = new Coin();
+							coin.setCoinId(cryptoCoinId);
+							coin.setCoinName(cryptoCoinName);
+							coin.setSymbol(cryptoCoinSymbol);
+							coin.setTimestamp(timestmp);
+							coin.setPriceEur(currentCoinJsonNodeDetails.get("eur").decimalValue());
+							coin.setPriceUsd(currentCoinJsonNodeDetails.get("usd").decimalValue());
+							coin.setPriceBtc(currentCoinJsonNodeDetails.get("btc").decimalValue());
+							coin.setPriceEth(currentCoinJsonNodeDetails.get("eth").decimalValue());
+							coin.setMarketCapEur(currentCoinJsonNodeDetails.get("eur_market_cap").decimalValue());
+							coin.setMarketCapUsd(currentCoinJsonNodeDetails.get("usd_market_cap").decimalValue());
+							coin.setMarketCapBtc(currentCoinJsonNodeDetails.get("btc_market_cap").decimalValue());
+							coin.setMarketCapEth(currentCoinJsonNodeDetails.get("eth_market_cap").decimalValue());
+							coin.setTotalVolumeEur(currentCoinJsonNodeDetails.get("eur_24h_vol").decimalValue());
+							coin.setTotalVolumeUsd(currentCoinJsonNodeDetails.get("usd_24h_vol").decimalValue());
+							coin.setTotalVolumeBtc(currentCoinJsonNodeDetails.get("btc_24h_vol").decimalValue());
+							coin.setTotalVolumeEth(currentCoinJsonNodeDetails.get("eth_24h_vol").decimalValue());
+
+							String jsonString = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(coin);
+							System.out.println(jsonString);
+
+							post("http://localhost:8080/api/v1/coin", jsonString);
+							break; // Erfolg, Schleife beenden
+						} else {
+							throw new RuntimeException("HTTP-Fehlercode: " + statusCode);
+						}
 					} catch (Exception e) {
-						++failCounter;
-						System.out.println("Error Occured: ");
-						e.printStackTrace();
-						Thread.sleep(2000);
-						if (totalFailCounter >= 7) {
-							totalFailCounter = 0;
+						System.out.println("Fehler aufgetreten für " + cryptoCoinId + ": " + e.getMessage());
+						retries++;
+						if (retries >= MAX_RETRIES) {
+							System.out.println("Maximale Anzahl von Versuchen erreicht für " + cryptoCoinId + ". Gehe zur nächsten Münze über.");
 							break;
 						}
-						if (failCounter >= 7) {
-							++totalFailCounter;
-							continue;
-						} else {
-							--i;
-							continue;
-						}
+						waitTime *= 2; // Exponentieller Rückzug
+						System.out.println("Erneuter Versuch in " + waitTime / 1000 + " Sekunden...");
 					}
-
 				}
 			}
 		}
 	}
 
+	private static HttpResponse<String> getCoingeckoResponse(String uri) throws Exception {
+		HttpClient client = HttpClient.newHttpClient();
+		HttpRequest request = HttpRequest.newBuilder()
+				.uri(URI.create(uri))
+				.header("Accept", "application/json")
+				.build();
+
+		return client.send(request, BodyHandlers.ofString());
+	}
+
 	public static void main(String[] args) throws Exception {
 ////		parseCoingeckoUpdatable("testsource.json", "testtarget.json", true); // fetches the latest coin list
 ////		parseCoingecko("coingecko.json", "portfoliocoingecko.json"); // assumes the a coin list is in place
-		//updateCryptos();
+		updateCryptos();
 
-		fetchAndUpdateHistoricalData();
+		// fetchAndUpdateHistoricalData();
 		//fetchAllHistoricalData(cryptoIds, 61);
 	}
 
