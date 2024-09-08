@@ -17,9 +17,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHeaders;
@@ -41,6 +39,12 @@ import com.fasterxml.jackson.databind.ObjectWriter;
 import com.sam.coin.model.Coin;
 
 public class CryptoClient {
+
+	private static final String BACKEND_URL = "http://localhost:8080/api/v1/coin";
+	private static final String COINGECKO_API_URL = "https://api.coingecko.com/api/v3";
+
+	private static final int MAX_RETRIES = 10;
+	private static final int INITIAL_WAIT_TIME = 5000; // 5 Sekunden
 
 	static String[] coins = new String[] { "ethereum", "stellar", "cardano", "zcash", "algorand", "bitcoin",
 			"chainlink", "Polkadot", "THETA" };
@@ -150,11 +154,13 @@ public class CryptoClient {
 
 	public static String getCoingecko(String uri) throws Exception {
 		HttpClient client = HttpClient.newHttpClient();
-		HttpRequest request = HttpRequest.newBuilder().uri(URI.create(uri)).header("Accept", "application/json")
+		HttpRequest request = HttpRequest.newBuilder()
+				.uri(URI.create(uri))
+				.header("Accept", "application/json")
 				.build();
 		HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
 		System.out.println("Status: " + response.statusCode());
-		return response.body().toString();
+		return response.body();
 	}
 
 	public static void post(String uri, String data) throws Exception {
@@ -314,6 +320,198 @@ public class CryptoClient {
 //		String writeValueAsString = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(response.body());
 	}
 
+	public static void fetchAndUpdateHistoricalData() throws Exception {
+		Map<String, Date> lastValidDates = getLastValidDatesFromBackend();
+
+		for (String coinId : cryptoIds) {
+			Date lastValidDate = lastValidDates.get(coinId);
+			System.out.println("-- last valid Date for: " + coinId + " is: " + lastValidDate);
+			LocalDate startDate = lastValidDate != null ?
+					lastValidDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate().plusDays(1) :
+					LocalDate.now().minusYears(1);  // Wenn kein Datum, starte von vor einem Jahr
+
+			LocalDate endDate = LocalDate.now();
+			System.out.println("-- end Date for: " + coinId + " is: " + endDate);
+
+			while (!startDate.isAfter(endDate)) {
+				String dateStr = startDate.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+				String url = String.format("%s/coins/%s/history?date=%s", COINGECKO_API_URL, coinId, dateStr);
+
+				System.out.println("Calling URL: " + url);
+
+				String response = getCoingeckoWithRetry(url);
+				if (response != null) {
+					Coin coin = parseCoinData(response, coinId, startDate);
+					sendCoinDataToBackend(coin);
+					startDate = startDate.plusDays(1);
+				} else {
+					System.out.println("Failed to fetch data for " + coinId + " on " + dateStr + " after multiple retries. Moving to next coin.");
+					break;
+				}
+
+				Thread.sleep(1200);  // Respektiere Coingecko's Rate-Limit
+			}
+		}
+	}
+
+	private static void sendCoinDataToBackend(Coin coin) throws Exception {
+		System.out.println(coin);
+
+		ObjectMapper mapper = new ObjectMapper();
+		String jsonCoin = mapper.writeValueAsString(coin);
+
+		System.out.println("json coin:");
+		System.out.println(jsonCoin);
+
+
+		post(BACKEND_URL, jsonCoin);  // Wiederverwendung der bestehenden post-Methode
+	}
+
+	private static String getCoingeckoWithRetry(String uri) throws Exception {
+		int retries = 0;
+		int waitTime = INITIAL_WAIT_TIME;
+
+		while (retries < MAX_RETRIES) {
+			try {
+				HttpClient client = HttpClient.newHttpClient();
+				HttpRequest request = HttpRequest.newBuilder()
+						.uri(URI.create(uri))
+						.header("Accept", "application/json")
+						.build();
+
+				HttpResponse<String> response = client.send(request, BodyHandlers.ofString());
+				int statusCode = response.statusCode();
+
+				System.out.println("Status: " + statusCode);
+
+				if (statusCode >= 200 && statusCode < 300) {
+					return response.body();
+				} else {
+					throw new RuntimeException("HTTP error code: " + statusCode);
+				}
+			} catch (Exception e) {
+				System.out.println("Error fetching data: " + e.getMessage() + ". Retrying in " + waitTime/1000 + " seconds...");
+				Thread.sleep(waitTime);
+				retries++;
+				waitTime *= 2; // Exponential backoff
+			}
+		}
+
+		System.out.println("Failed to fetch data after " + MAX_RETRIES + " retries.");
+		return null;
+	}
+
+	private static Map<String, Date> getLastValidDatesFromBackend() throws Exception {
+		Map<String, Date> result = new HashMap<>();
+		for (String coinId : cryptoIds) {
+			String url = BACKEND_URL + "/lastValidDate?coinId=" + coinId;
+			String response = getCoingecko(url);  // Wiederverwendung der bestehenden Methode
+
+			ObjectMapper mapper = new ObjectMapper();
+			JsonNode rootNode = mapper.readTree(response);
+			if (rootNode.has(coinId)) {
+				String dateString = rootNode.get(coinId).asText();
+				result.put(coinId, new SimpleDateFormat("yyyy-MM-dd").parse(dateString));
+			}
+		}
+		return result;
+	}
+
+	private static Coin parseCoinData(String jsonData, String coinId, LocalDate date) throws Exception {
+		if (jsonData == null || jsonData.trim().isEmpty()) {
+			throw new IllegalArgumentException("Empty or null JSON data");
+		}
+
+		ObjectMapper mapper = new ObjectMapper();
+		JsonNode root;
+		try {
+			root = mapper.readTree(jsonData);
+		} catch (JsonParseException e) {
+			System.out.println("Failed to parse JSON: " + jsonData);
+			throw e;
+		}
+
+		Coin coin = new Coin();
+		coin.setCoinId(coinId);
+		coin.setTimestamp(Timestamp.valueOf(date.atStartOfDay()));
+
+		coin.setSymbol(getTextSafely(root, "symbol"));
+		coin.setCoinName(getTextSafely(root, "name"));
+
+		JsonNode marketData = root.get("market_data");
+		if (marketData != null) {
+			JsonNode currentPrice = marketData.get("current_price");
+			JsonNode marketCap = marketData.get("market_cap");
+			JsonNode totalVolume = marketData.get("total_volume");
+
+			coin.setPriceEur(getDecimalSafely(currentPrice, "eur"));
+			coin.setPriceUsd(getDecimalSafely(currentPrice, "usd"));
+			coin.setPriceBtc(getDecimalSafely(currentPrice, "btc"));
+			coin.setPriceEth(getDecimalSafely(currentPrice, "eth"));
+
+			coin.setMarketCapEur(getDecimalSafely(marketCap, "eur"));
+			coin.setMarketCapUsd(getDecimalSafely(marketCap, "usd"));
+			coin.setMarketCapBtc(getDecimalSafely(marketCap, "btc"));
+			coin.setMarketCapEth(getDecimalSafely(marketCap, "eth"));
+
+			coin.setTotalVolumeEur(getDecimalSafely(totalVolume, "eur"));
+			coin.setTotalVolumeUsd(getDecimalSafely(totalVolume, "usd"));
+			coin.setTotalVolumeBtc(getDecimalSafely(totalVolume, "btc"));
+			coin.setTotalVolumeEth(getDecimalSafely(totalVolume, "eth"));
+		}
+
+		JsonNode communityData = root.get("community_data");
+		if (communityData != null) {
+			coin.setTwitterFollowers(getLongSafely(communityData, "twitter_followers", 0L));
+			coin.setRedditAvgPosts48Hours(getDecimalSafely(communityData, "reddit_average_posts_48h"));
+			coin.setRedditAvgComments48Hours(getDecimalSafely(communityData, "reddit_average_comments_48h"));
+			coin.setRedditSubscribers(getLongSafely(communityData, "reddit_subscribers", 0L));
+			coin.setRedditAccountsActive48Hours(getDecimalSafely(communityData, "reddit_accounts_active_48h"));
+		}
+
+		JsonNode developerData = root.get("developer_data");
+		if (developerData != null) {
+			coin.setDevForks(getLongSafely(developerData, "forks", 0L));
+			coin.setDevStars(getLongSafely(developerData, "stars", 0L));
+			coin.setDevTotalIssues(getLongSafely(developerData, "total_issues", 0L));
+			coin.setDevClosedIssues(getLongSafely(developerData, "closed_issues", 0L));
+			coin.setDevPullRequestsMerged(getLongSafely(developerData, "pull_requests_merged", 0L));
+			coin.setDevPullRequestContributors(getLongSafely(developerData, "pull_request_contributors", 0L));
+			coin.setDevCommitCount4Weeks(getLongSafely(developerData, "commit_count_4_weeks", 0L));
+
+			JsonNode codeAdditionsDeletions4Weeks = developerData.get("code_additions_deletions_4_weeks");
+			if (codeAdditionsDeletions4Weeks != null) {
+				coin.setDevCodeAdditions4Weeks(getLongSafely(codeAdditionsDeletions4Weeks, "additions", 0L));
+				coin.setDevCodeDeletions4Weeks(getLongSafely(codeAdditionsDeletions4Weeks, "deletions", 0L));
+			}
+		}
+
+		JsonNode publicInterestStats = root.get("public_interest_stats");
+		if (publicInterestStats != null) {
+			coin.setPublicAlexaRank(getLongSafely(publicInterestStats, "alexa_rank", 0L));
+		}
+
+		return coin;
+	}
+
+	// Hilfsmethoden für sicheres Abrufen von Werten
+	private static String getTextSafely(JsonNode node, String fieldName) {
+		JsonNode field = node.get(fieldName);
+		return (field != null) ? field.asText() : "";
+	}
+
+	private static BigDecimal getDecimalSafely(JsonNode node, String fieldName) {
+		if (node == null) return BigDecimal.ZERO;
+		JsonNode field = node.get(fieldName);
+		return (field != null && field.isNumber()) ? field.decimalValue() : BigDecimal.ZERO;
+	}
+
+	private static Long getLongSafely(JsonNode node, String fieldName, Long defaultValue) {
+		if (node == null) return defaultValue;
+		JsonNode field = node.get(fieldName);
+		return (field != null && field.isNumber()) ? field.longValue() : defaultValue;
+	}
+
 	public static int scounter = 0;
 
 	public static void updateCryptos()
@@ -395,8 +593,10 @@ public class CryptoClient {
 	public static void main(String[] args) throws Exception {
 ////		parseCoingeckoUpdatable("testsource.json", "testtarget.json", true); // fetches the latest coin list
 ////		parseCoingecko("coingecko.json", "portfoliocoingecko.json"); // assumes the a coin list is in place
-		updateCryptos();
-////		fetchAllHistoricalData(cryptoIds, 61);
+		//updateCryptos();
+
+		fetchAndUpdateHistoricalData();
+		//fetchAllHistoricalData(cryptoIds, 61);
 	}
 
 }
