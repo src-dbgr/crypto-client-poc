@@ -6,7 +6,6 @@ import com.sam.coin.model.Coin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -15,12 +14,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.*;
 
 /**
  * A client for fetching and updating cryptocurrency data from Coingecko API.
@@ -32,9 +30,10 @@ public class CryptoClient {
 	private static final String BACKEND_URL = "http://localhost:8080/api/v1/coin";
 	private static final String COINGECKO_API_URL = "https://api.coingecko.com/api/v3";
 	private static final int MAX_RETRIES = 10;
-	private static final int RATE_LIMIT_DELAY = 5000; // milliseconds
+	private static final long RATE_LIMIT_DELAY = 5000; // milliseconds
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 	private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+	private static final ScheduledExecutorService RATE_LIMITER = Executors.newScheduledThreadPool(1);
 
 	private static final List<String> CRYPTO_IDS = Arrays.asList(
 			"bitcoin", "ethereum", "cardano", "polkadot", "chainlink",
@@ -52,66 +51,68 @@ public class CryptoClient {
 	 * Updates the current data for all cryptocurrencies in the list.
 	 *
 	 * @throws IOException if there's an I/O error during the operation
-	 * @throws InterruptedException if the operation is interrupted
 	 */
-	public static void updateCryptos() throws IOException, InterruptedException {
-		updateCryptoList("coingecko.json", "portfoliocoingecko.json");
+	public static void updateCryptos() throws IOException {
+		try {
+			updateCryptoList("coingecko.json", "portfoliocoingecko.json");
 
-		String url = COINGECKO_API_URL + "/simple/price?ids=%s&vs_currencies=eur,btc,eth,usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true";
+			String url = COINGECKO_API_URL + "/simple/price?ids=%s&vs_currencies=eur,btc,eth,usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true";
 
-		try (InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream("portfoliocoingecko.json")) {
-			JsonNode coinsNode = OBJECT_MAPPER.readTree(in);
-			for (JsonNode crypto : coinsNode) {
-				String cryptoId = crypto.get("id").asText();
-				String cryptoName = crypto.get("name").asText();
-				String cryptoSymbol = crypto.get("symbol").asText();
+			try (InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream("portfoliocoingecko.json")) {
+				JsonNode coinsNode = OBJECT_MAPPER.readTree(in);
+				for (JsonNode crypto : coinsNode) {
+					String cryptoId = crypto.get("id").asText();
+					String cryptoName = crypto.get("name").asText();
+					String cryptoSymbol = crypto.get("symbol").asText();
 
-				String formattedUrl = String.format(url, cryptoId);
+					String formattedUrl = String.format(url, cryptoId);
 
-				CompletableFuture.runAsync(() -> {
-					try {
-						processCryptoData(formattedUrl, cryptoId, cryptoName, cryptoSymbol);
-					} catch (Exception e) {
-						LOG.error("Error processing crypto data for " + cryptoId, e);
-					}
-				}).join(); // Wait for each crypto to complete before moving to the next one
+					CompletableFuture.runAsync(() -> {
+						try {
+							processCryptoData(formattedUrl, cryptoId, cryptoName, cryptoSymbol);
+						} catch (Exception e) {
+							LOG.error("Error processing crypto data for {}", cryptoId, e);
+						}
+					}).join(); // Wait for each crypto to complete before moving to the next one
 
-				Thread.sleep(RATE_LIMIT_DELAY);
+					rateLimitedWait();
+				}
 			}
+		} catch (IOException e) {
+			LOG.error("Error updating cryptos", e);
+			throw e;
 		}
 	}
 
 	private static void processCryptoData(String url, String cryptoId, String cryptoName, String cryptoSymbol) throws IOException, InterruptedException {
-		int retryCount = 0;
-		while (retryCount < MAX_RETRIES) {
+		for (int retryCount = 0; retryCount < MAX_RETRIES; retryCount++) {
 			try {
 				HttpResponse<String> response = sendGetRequest(url);
-				LOG.info("Response Status Code: " + response.statusCode());
+				LOG.info("Response Status Code: {}", response.statusCode());
 				if (response.statusCode() >= 200 && response.statusCode() < 300) {
 					JsonNode coinData = OBJECT_MAPPER.readTree(response.body()).get(cryptoId);
 					if (coinData != null) {
 						Coin coin = createCoinFromJsonNode(cryptoId, cryptoName, cryptoSymbol, coinData);
 						sendCoinDataToBackend(coin);
-						return;
-					} else {
-						LOG.warn("No data returned for " + cryptoId);
-						return;
-					}
-				} else {
-					if(response.statusCode() == 429){
+                    } else {
+						LOG.warn("No data returned for {}", cryptoId);
+                    }
+                    return;
+                } else {
+					if (response.statusCode() == 429) {
 						LOG.info("Rate limit was hit...");
 					}
 					throw new IOException("HTTP status code: " + response.statusCode() + " for " + cryptoId);
 				}
 			} catch (Exception e) {
-				retryCount++;
-				LOG.warn("Issue occurred for " + cryptoId + ": " + e.getMessage(), e);
-				if (retryCount >= MAX_RETRIES) {
-					LOG.error("Max retries reached for " + cryptoId + ". Moving to next coin.");
+				LOG.warn("Issue occurred for {}: {}", cryptoId, e.getMessage(), e);
+				if (retryCount == MAX_RETRIES - 1) {
+					LOG.error("Max retries reached for {}. Moving to next coin.", cryptoId);
 					return;
 				} else {
-					LOG.info("Retrying in " + (RATE_LIMIT_DELAY * retryCount) + " milliseconds...");
-					Thread.sleep(RATE_LIMIT_DELAY * retryCount);  // Exponential backoff
+					long delay = RATE_LIMIT_DELAY * (long) (retryCount + 1);
+					LOG.info("Retrying in {} milliseconds...", delay);
+					Thread.sleep(delay);  // Exponential backoff
 				}
 			}
 		}
@@ -126,7 +127,7 @@ public class CryptoClient {
 					filteredCoins.add(coin);
 				}
 			}
-			OBJECT_MAPPER.writeValue(new File("src/main/resources/" + targetName), filteredCoins);
+			OBJECT_MAPPER.writeValue(new java.io.File("src/main/resources/" + targetName), filteredCoins);
 		}
 	}
 
@@ -153,19 +154,18 @@ public class CryptoClient {
 					try {
 						processHistoricalData(url, coinId, finalStartDate);
 					} catch (Exception e) {
-						LOG.error("Error processing historical data for " + coinId + " on " + dateStr, e);
+						LOG.error("Error processing historical data for {} on {}", coinId, dateStr, e);
 					}
 				}).join(); // Wait for each date to complete before moving to the next one
 
 				startDate = startDate.plusDays(1);
-				Thread.sleep(RATE_LIMIT_DELAY);
+				rateLimitedWait();
 			}
 		}
 	}
 
 	private static void processHistoricalData(String url, String coinId, LocalDate date) throws Exception {
-		int retryCount = 0;
-		while (retryCount < MAX_RETRIES) {
+		for (int retryCount = 0; retryCount < MAX_RETRIES; retryCount++) {
 			try {
 				HttpResponse<String> response = sendGetRequest(url);
 				if (response.statusCode() >= 200 && response.statusCode() < 300) {
@@ -173,20 +173,20 @@ public class CryptoClient {
 					sendCoinDataToBackend(coin);
 					return;
 				} else if (response.statusCode() == 401 || response.statusCode() == 403) {
-					LOG.warn("Skipping due to lack of permission for " + coinId + " on " + date);
+					LOG.warn("Skipping due to lack of permission for {} on {} with response {}", coinId, date, response.body());
 					return;
 				} else {
 					throw new IOException("HTTP error code: " + response.statusCode() + " for " + coinId + " on " + date);
 				}
 			} catch (Exception e) {
-				retryCount++;
-				LOG.warn("Error occurred for " + coinId + " on " + date + ": " + e.getMessage(), e);
-				if (retryCount >= MAX_RETRIES) {
-					LOG.error("Max retries reached for " + coinId + " on " + date + ". Moving to next date.");
+				LOG.warn("Error occurred for {} on {}: {}", coinId, date, e.getMessage(), e);
+				if (retryCount == MAX_RETRIES - 1) {
+					LOG.error("Max retries reached for {} on {}. Moving to next date.", coinId, date);
 					return;
 				} else {
-					LOG.info("Retrying in " + (RATE_LIMIT_DELAY * retryCount) + " milliseconds...");
-					Thread.sleep(RATE_LIMIT_DELAY * retryCount);  // Exponential backoff
+					long delay = RATE_LIMIT_DELAY * (long) (retryCount + 1);
+					LOG.info("Rate Limiting hit. Retrying in {} milliseconds...", delay);
+					Thread.sleep(delay);  // Exponential backoff
 				}
 			}
 		}
@@ -196,9 +196,8 @@ public class CryptoClient {
 	 * Fetches historical data for all cryptocurrencies for a specified time frame.
 	 *
 	 * @param timeFrame the number of days to fetch data for
-	 * @throws InterruptedException if the operation is interrupted
 	 */
-	public static void fetchAllHistoricalData(int timeFrame) throws InterruptedException {
+	public static void fetchAllHistoricalData(int timeFrame) {
 		for (String coinId : CRYPTO_IDS) {
 			for (int i = 0; i < timeFrame; i++) {
 				LocalDate date = LocalDate.now().minusDays(i);
@@ -209,11 +208,11 @@ public class CryptoClient {
 					try {
 						processHistoricalData(url, coinId, date);
 					} catch (Exception e) {
-						LOG.error("Error processing historical data for " + coinId + " on " + dateString, e);
+						LOG.error("Error processing historical data for {} on {}", coinId, dateString, e);
 					}
 				}).join(); // Wait for each date to complete before moving to the next one
 
-				Thread.sleep(RATE_LIMIT_DELAY);
+				rateLimitedWait();
 			}
 		}
 	}
@@ -227,7 +226,7 @@ public class CryptoClient {
 				JsonNode rootNode = OBJECT_MAPPER.readTree(response.body());
 				if (rootNode.has(coinId)) {
 					String dateString = rootNode.get(coinId).asText();
-					result.put(coinId, new SimpleDateFormat("yyyy-MM-dd").parse(dateString));
+					result.put(coinId, new java.text.SimpleDateFormat("yyyy-MM-dd").parse(dateString));
 				}
 			}
 		}
@@ -285,35 +284,35 @@ public class CryptoClient {
 
 	private static void setCommunityData(Coin coin, JsonNode communityData) {
 		if (communityData != null) {
-			coin.setTwitterFollowers(getLongSafely(communityData, "twitter_followers", 0L));
+			coin.setTwitterFollowers(getLongSafely(communityData, "twitter_followers"));
 			coin.setRedditAvgPosts48Hours(getDecimalSafely(communityData, "reddit_average_posts_48h"));
 			coin.setRedditAvgComments48Hours(getDecimalSafely(communityData, "reddit_average_comments_48h"));
-			coin.setRedditSubscribers(getLongSafely(communityData, "reddit_subscribers", 0L));
+			coin.setRedditSubscribers(getLongSafely(communityData, "reddit_subscribers"));
 			coin.setRedditAccountsActive48Hours(getDecimalSafely(communityData, "reddit_accounts_active_48h"));
 		}
 	}
 
 	private static void setDeveloperData(Coin coin, JsonNode developerData) {
 		if (developerData != null) {
-			coin.setDevForks(getLongSafely(developerData, "forks", 0L));
-			coin.setDevStars(getLongSafely(developerData, "stars", 0L));
-			coin.setDevTotalIssues(getLongSafely(developerData, "total_issues", 0L));
-			coin.setDevClosedIssues(getLongSafely(developerData, "closed_issues", 0L));
-			coin.setDevPullRequestsMerged(getLongSafely(developerData, "pull_requests_merged", 0L));
-			coin.setDevPullRequestContributors(getLongSafely(developerData, "pull_request_contributors", 0L));
-			coin.setDevCommitCount4Weeks(getLongSafely(developerData, "commit_count_4_weeks", 0L));
+			coin.setDevForks(getLongSafely(developerData, "forks"));
+			coin.setDevStars(getLongSafely(developerData, "stars"));
+			coin.setDevTotalIssues(getLongSafely(developerData, "total_issues"));
+			coin.setDevClosedIssues(getLongSafely(developerData, "closed_issues"));
+			coin.setDevPullRequestsMerged(getLongSafely(developerData, "pull_requests_merged"));
+			coin.setDevPullRequestContributors(getLongSafely(developerData, "pull_request_contributors"));
+			coin.setDevCommitCount4Weeks(getLongSafely(developerData, "commit_count_4_weeks"));
 
 			JsonNode codeAdditionsDeletions4Weeks = developerData.get("code_additions_deletions_4_weeks");
 			if (codeAdditionsDeletions4Weeks != null) {
-				coin.setDevCodeAdditions4Weeks(getLongSafely(codeAdditionsDeletions4Weeks, "additions", 0L));
-				coin.setDevCodeDeletions4Weeks(getLongSafely(codeAdditionsDeletions4Weeks, "deletions", 0L));
+				coin.setDevCodeAdditions4Weeks(getLongSafely(codeAdditionsDeletions4Weeks, "additions"));
+				coin.setDevCodeDeletions4Weeks(getLongSafely(codeAdditionsDeletions4Weeks, "deletions"));
 			}
 		}
 	}
 
 	private static void setPublicInterestStats(Coin coin, JsonNode publicInterestStats) {
 		if (publicInterestStats != null) {
-			coin.setPublicAlexaRank(getLongSafely(publicInterestStats, "alexa_rank", 0L));
+			coin.setPublicAlexaRank(getLongSafely(publicInterestStats, "alexa_rank"));
 		}
 	}
 
@@ -324,26 +323,25 @@ public class CryptoClient {
 				.GET()
 				.build();
 
-		LOG.info("Sending request: " + request);
+		LOG.info("Sending request: {}", request);
 		return HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
 	}
 
 	private static void sendCoinDataToBackend(Coin coin) {
 		try {
 			String jsonCoin = OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(coin);
-			LOG.info("Sending coin data to backend:\n" + jsonCoin);
+			LOG.info("Sending coin data to backend:\n{}", jsonCoin);
 			HttpRequest request = HttpRequest.newBuilder()
 					.uri(URI.create(BACKEND_URL))
 					.header("Content-Type", "application/json")
 					.POST(HttpRequest.BodyPublishers.ofString(jsonCoin))
 					.build();
 
-			LOG.info("Sending coin data to backend: " + request);
 			HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
 			if (response.statusCode() < 200 || response.statusCode() >= 300) {
-				LOG.warn("Error sending data to backend. HTTP status: " + response.statusCode());
+				LOG.warn("Error sending data to backend. HTTP status: {}", response.statusCode());
 			}
-			LOG.info("Backend response: " + response);
+			LOG.info("Backend response: {}", response);
 		} catch (Exception e) {
 			LOG.error("Error sending coin data to backend", e);
 		}
@@ -380,15 +378,30 @@ public class CryptoClient {
 	}
 
 	private static BigDecimal getDecimalSafely(JsonNode node, String fieldName) {
-		if (node == null) return BigDecimal.ZERO;
+		if (node == null) {
+			return BigDecimal.ZERO;
+		}
 		JsonNode field = node.get(fieldName);
 		return (field != null && field.isNumber()) ? field.decimalValue() : BigDecimal.ZERO;
 	}
 
-	private static Long getLongSafely(JsonNode node, String fieldName, Long defaultValue) {
-		if (node == null) return defaultValue;
+	private static Long getLongSafely(JsonNode node, String fieldName) {
+		if (node == null) {
+			return 0L;
+		}
 		JsonNode field = node.get(fieldName);
-		return (field != null && field.isNumber()) ? field.longValue() : defaultValue;
+		return (field != null && field.isNumber()) ? field.longValue() : 0L;
+	}
+
+	private static void rateLimitedWait() {
+		try {
+			RATE_LIMITER.schedule(() -> {}, RATE_LIMIT_DELAY, TimeUnit.MILLISECONDS).get();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt(); // Restore the interrupted status
+			LOG.warn("Rate limiting wait was interrupted", e);
+		} catch (ExecutionException e) {
+			LOG.error("An error occurred during rate limiting", e);
+		}
 	}
 
 	/**
@@ -399,11 +412,11 @@ public class CryptoClient {
 	public static void main(String[] args) {
 		try {
 			LOG.info("Updating current crypto data...");
-			updateCryptos();
+//			updateCryptos();
 			LOG.info("Current crypto data update completed.");
 
 			LOG.info("Fetching and updating historical data...");
-//			fetchAndUpdateHistoricalData();
+			fetchAndUpdateHistoricalData();
 			LOG.info("Historical data update completed.");
 
 			LOG.info("Fetching all historical data for the last 60 days...");
@@ -412,6 +425,8 @@ public class CryptoClient {
 
 		} catch (Exception e) {
 			LOG.error("An error occurred", e);
+		} finally {
+			RATE_LIMITER.shutdown();
 		}
 	}
 }
