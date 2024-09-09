@@ -412,11 +412,11 @@ public class CryptoClient {
 	public static void main(String[] args) {
 		try {
 			LOG.info("Updating current crypto data...");
-//			updateCryptos();
+			updateCryptos();
 			LOG.info("Current crypto data update completed.");
 
 			LOG.info("Fetching and updating historical data...");
-			fetchAndUpdateHistoricalData();
+//			fetchAndUpdateHistoricalData();
 			LOG.info("Historical data update completed.");
 
 			LOG.info("Fetching all historical data for the last 60 days...");
