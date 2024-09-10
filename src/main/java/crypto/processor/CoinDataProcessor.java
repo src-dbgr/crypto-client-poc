@@ -2,7 +2,7 @@ package crypto.processor;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sam.coin.model.Coin;
+import com.sam.coin.domain.model.Coin;
 import crypto.service.CoinGeckoService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

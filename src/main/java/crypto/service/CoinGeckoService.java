@@ -1,7 +1,7 @@
 package crypto.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.sam.coin.model.Coin;
+import com.sam.coin.domain.model.Coin;
 import crypto.config.CryptoConfig;
 import crypto.processor.CoinDataProcessor;
 import crypto.processor.JsonProcessor;

@@ -7,7 +7,7 @@ import java.util.List;
  * Configuration class for the CryptoClient.
  */
 public class CryptoConfig {
-	private final String backendUrl = "http://localhost:8080/api/v1/coin";
+	private final String backendUrl = "http://localhost:8080/api/v1/coins";
 	private final String coingeckoApiUrl = "https://api.coingecko.com/api/v3";
 	private final int maxRetries = 10;
 	private final long rateLimitDelay = 5000;

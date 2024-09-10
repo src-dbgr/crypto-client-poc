@@ -1,6 +1,6 @@
 package crypto.service.api;
 
-import com.sam.coin.model.Coin;
+import com.sam.coin.domain.model.Coin;
 
 import java.util.Date;
 import java.util.List;
