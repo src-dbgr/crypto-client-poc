@@ -16,9 +16,10 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-public class CoinGeckoService  implements CryptoDataSource {
+public class CoinGeckoService implements CryptoDataSource {
     private static final Logger LOG = LoggerFactory.getLogger(CoinGeckoService.class);
     private final CryptoConfig config;
     private final HttpClientWrapper httpClient;
@@ -37,11 +38,9 @@ public class CoinGeckoService  implements CryptoDataSource {
 
     @Override
     public void fetchAndSendCurrentData(List<String> cryptoIds, Consumer<Coin> sendToBackend) throws IOException, InterruptedException {
-        String url = config.getCoingeckoApiUrl() + "/simple/price?ids=%s&vs_currencies=eur,btc,eth,usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true&include_last_updated_at=true";
-
         for (String cryptoId : cryptoIds) {
-            String formattedUrl = String.format(url, cryptoId);
-            processCryptoData(formattedUrl, cryptoId, sendToBackend);
+            String url = String.format("%s/coins/%s", config.getCoingeckoApiUrl(), cryptoId);
+            processCryptoData(url, cryptoId, sendToBackend);
             rateLimiter.acquire();
         }
     }
@@ -52,15 +51,8 @@ public class CoinGeckoService  implements CryptoDataSource {
             try {
                 String response = httpClient.sendGetRequest(url);
                 JsonNode rootNode = jsonProcessor.parseJson(response);
-                JsonNode coinData = rootNode.get(cryptoId);
-                if (coinData != null) {
-                    String coinInfoUrl = String.format("%s/coins/%s", config.getCoingeckoApiUrl(), cryptoId);
-                    String coinInfoResponse = httpClient.sendGetRequest(coinInfoUrl);
-                    JsonNode coinInfo = jsonProcessor.parseJson(coinInfoResponse);
-                    String cryptoName = coinInfo.path("name").asText("");
-                    String cryptoSymbol = coinInfo.path("symbol").asText("");
-
-                    Coin coin = coinDataProcessor.createCoinFromJsonNode(cryptoId, cryptoName, cryptoSymbol, coinData);
+                if (rootNode != null) {
+                    Coin coin = coinDataProcessor.createCoinFromJsonNode(cryptoId, rootNode);
                     sendToBackend.accept(coin);
                 } else {
                     LOG.warn("No data returned for {}", cryptoId);
@@ -74,7 +66,7 @@ public class CoinGeckoService  implements CryptoDataSource {
                 } else {
                     long delay = config.getRateLimitDelay() * (long) (retryCount + 1);
                     LOG.info("Retrying in {} milliseconds...", delay);
-                    Thread.sleep(delay);  // Exponential backoff
+                    TimeUnit.MILLISECONDS.sleep(delay);  // Backoff
                 }
             }
         }
@@ -119,7 +111,7 @@ public class CoinGeckoService  implements CryptoDataSource {
                 } else {
                     long delay = config.getRateLimitDelay() * (long) (retryCount + 1);
                     LOG.info("Rate Limiting hit. Retrying in {} milliseconds...", delay);
-                    Thread.sleep(delay);  // Exponential backoff
+                    TimeUnit.MILLISECONDS.sleep(delay);  // Backoff
                 }
             }
         }

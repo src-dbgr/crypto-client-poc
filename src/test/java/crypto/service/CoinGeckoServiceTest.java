@@ -1,5 +1,6 @@
 package crypto.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.coin.model.Coin;
 import crypto.config.CryptoConfig;
@@ -55,20 +56,17 @@ class CoinGeckoServiceTest {
         // Arrange
         List<String> cryptoIds = Arrays.asList("bitcoin", "ethereum");
         String apiUrl = "https://api.coingecko.com/api/v3";
-        String bitcoinPriceResponse = "{\"bitcoin\":{\"usd\":50000}}";
-        String ethereumPriceResponse = "{\"ethereum\":{\"usd\":3000}}";
-        String bitcoinInfoResponse = "{\"name\":\"Bitcoin\",\"symbol\":\"BTC\"}";
-        String ethereumInfoResponse = "{\"name\":\"Ethereum\",\"symbol\":\"ETH\"}";
+        String bitcoinResponse = "{\"id\":\"bitcoin\",\"symbol\":\"btc\",\"name\":\"Bitcoin\",\"market_data\":{\"current_price\":{\"usd\":50000,\"eur\":42000,\"btc\":1,\"eth\":15},\"market_cap\":{\"usd\":1000000000,\"eur\":840000000,\"btc\":20000,\"eth\":300000},\"total_volume\":{\"usd\":50000000,\"eur\":42000000,\"btc\":1000,\"eth\":15000},\"last_updated\":\"2021-09-10T19:54:06.165Z\"}}";
+        String ethereumResponse = "{\"id\":\"ethereum\",\"symbol\":\"eth\",\"name\":\"Ethereum\",\"market_data\":{\"current_price\":{\"usd\":3000,\"eur\":2520,\"btc\":0.06,\"eth\":1},\"market_cap\":{\"usd\":400000000,\"eur\":336000000,\"btc\":8000,\"eth\":133333},\"total_volume\":{\"usd\":20000000,\"eur\":16800000,\"btc\":400,\"eth\":6666},\"last_updated\":\"2021-09-10T19:54:06.165Z\"}}";
 
-        setupMocks(apiUrl, bitcoinPriceResponse, ethereumPriceResponse, bitcoinInfoResponse, ethereumInfoResponse);
+        setupMocks(apiUrl, bitcoinResponse, ethereumResponse);
 
         // Act
         coinGeckoService.fetchAndSendCurrentData(cryptoIds, coin -> {});
 
         // Assert
-        verify(httpClient, times(2)).sendGetRequest(contains("/simple/price"));
         verify(httpClient, times(2)).sendGetRequest(contains("/coins/"));
-        verify(coinDataProcessor, times(2)).createCoinFromJsonNode(anyString(), anyString(), anyString(), any());
+        verify(coinDataProcessor, times(2)).createCoinFromJsonNode(anyString(), any(JsonNode.class));
         verify(rateLimiter, times(2)).acquire();
     }
 
@@ -81,20 +79,17 @@ class CoinGeckoServiceTest {
         // Arrange
         List<String> cryptoIds = Arrays.asList("bitcoin", "ethereum");
         String apiUrl = "https://api.coingecko.com/api/v3";
-        String bitcoinPriceResponse = "{\"bitcoin\":{\"usd\":50000}}";
-        String ethereumPriceResponse = "{}";  // No data for Ethereum
-        String bitcoinInfoResponse = "{\"name\":\"Bitcoin\",\"symbol\":\"BTC\"}";
+        String bitcoinResponse = "{\"id\":\"bitcoin\",\"symbol\":\"btc\",\"name\":\"Bitcoin\",\"market_data\":{\"current_price\":{\"usd\":50000}}}";
+        String ethereumResponse = "{}";  // No data for Ethereum
 
-        setupMocks(apiUrl, bitcoinPriceResponse, ethereumPriceResponse, bitcoinInfoResponse, null);
+        setupMocks(apiUrl, bitcoinResponse, ethereumResponse);
 
         // Act
         coinGeckoService.fetchAndSendCurrentData(cryptoIds, coin -> {});
 
         // Assert
-        verify(httpClient, times(2)).sendGetRequest(contains("/simple/price"));
-        verify(httpClient, times(1)).sendGetRequest(contains("/coins/bitcoin"));
-        verify(httpClient, never()).sendGetRequest(contains("/coins/ethereum"));
-        verify(coinDataProcessor, times(1)).createCoinFromJsonNode(eq("bitcoin"), anyString(), anyString(), any());
+        verify(httpClient, times(2)).sendGetRequest(contains("/coins/"));
+        verify(coinDataProcessor, times(1)).createCoinFromJsonNode(eq("bitcoin"), any(JsonNode.class));
         verify(rateLimiter, times(2)).acquire();
     }
 
@@ -110,7 +105,7 @@ class CoinGeckoServiceTest {
         lastValidDates.put("bitcoin", Date.from(LocalDate.now().minusDays(5).atStartOfDay(ZoneId.systemDefault()).toInstant()));
         lastValidDates.put("ethereum", Date.from(LocalDate.now().minusDays(3).atStartOfDay(ZoneId.systemDefault()).toInstant()));
 
-        String historicalDataResponse = "{\"market_data\":{\"current_price\":{\"usd\":45000}}}";
+        String historicalDataResponse = "{\"id\":\"bitcoin\",\"symbol\":\"btc\",\"name\":\"Bitcoin\",\"market_data\":{\"current_price\":{\"usd\":45000}}}";
         when(httpClient.sendGetRequest(anyString())).thenReturn(historicalDataResponse);
         when(coinDataProcessor.parseCoinData(anyString(), anyString(), any(LocalDate.class))).thenReturn(new Coin());
 
@@ -133,7 +128,7 @@ class CoinGeckoServiceTest {
         List<String> cryptoIds = Arrays.asList("bitcoin", "ethereum");
         int timeFrame = 30;  // 30 days
 
-        String historicalDataResponse = "{\"market_data\":{\"current_price\":{\"usd\":45000}}}";
+        String historicalDataResponse = "{\"id\":\"bitcoin\",\"symbol\":\"btc\",\"name\":\"Bitcoin\",\"market_data\":{\"current_price\":{\"usd\":45000}}}";
         when(httpClient.sendGetRequest(anyString())).thenReturn(historicalDataResponse);
         when(coinDataProcessor.parseCoinData(anyString(), anyString(), any(LocalDate.class))).thenReturn(new Coin());
 
@@ -160,30 +155,25 @@ class CoinGeckoServiceTest {
         when(httpClient.sendGetRequest(anyString()))
                 .thenThrow(new IOException("API Error"))
                 .thenThrow(new IOException("API Error"))
-                .thenReturn("{\"bitcoin\":{\"usd\":50000}}");
+                .thenReturn("{\"id\":\"bitcoin\",\"symbol\":\"btc\",\"name\":\"Bitcoin\",\"market_data\":{\"current_price\":{\"usd\":50000}}}");
 
         // Act
         coinGeckoService.fetchAndSendCurrentData(cryptoIds, coin -> {});
 
         // Assert
-        verify(httpClient, times(3)).sendGetRequest(contains("/simple/price"));
+        verify(httpClient, times(3)).sendGetRequest(contains("/coins/"));
         verify(rateLimiter, times(1)).acquire();
     }
 
-    private void setupMocks(String apiUrl, String bitcoinPriceResponse, String ethereumPriceResponse,
-                            String bitcoinInfoResponse, String ethereumInfoResponse) throws Exception {
+    private void setupMocks(String apiUrl, String bitcoinResponse, String ethereumResponse) throws Exception {
         when(config.getCoingeckoApiUrl()).thenReturn(apiUrl);
         when(config.getMaxRetries()).thenReturn(3);
-        when(httpClient.sendGetRequest(contains("/simple/price?ids=bitcoin"))).thenReturn(bitcoinPriceResponse);
-        when(httpClient.sendGetRequest(contains("/simple/price?ids=ethereum"))).thenReturn(ethereumPriceResponse);
-        when(httpClient.sendGetRequest(contains("/coins/bitcoin"))).thenReturn(bitcoinInfoResponse);
-        if (ethereumInfoResponse != null) {
-            when(httpClient.sendGetRequest(contains("/coins/ethereum"))).thenReturn(ethereumInfoResponse);
-        }
+        when(httpClient.sendGetRequest(contains("/coins/bitcoin"))).thenReturn(bitcoinResponse);
+        when(httpClient.sendGetRequest(contains("/coins/ethereum"))).thenReturn(ethereumResponse);
         when(jsonProcessor.parseJson(anyString())).thenAnswer(invocation -> {
             ObjectMapper mapper = new ObjectMapper();
             return mapper.readTree((String) invocation.getArgument(0));
         });
-        when(coinDataProcessor.createCoinFromJsonNode(anyString(), anyString(), anyString(), any())).thenReturn(new Coin());
+        when(coinDataProcessor.createCoinFromJsonNode(anyString(), any(JsonNode.class))).thenReturn(new Coin());
     }
 }

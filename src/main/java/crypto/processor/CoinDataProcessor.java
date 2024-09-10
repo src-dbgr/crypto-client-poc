@@ -3,48 +3,72 @@ package crypto.processor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.coin.model.Coin;
+import crypto.service.CoinGeckoService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 
 /**
  * Processor for coin data.
  */
 public class CoinDataProcessor {
+
+	private static final Logger LOG = LoggerFactory.getLogger(CoinDataProcessor.class);
+
 	/**
 	 * Creates a Coin object from JsonNode data.
 	 *
 	 * @param cryptoId ID of the cryptocurrency
-	 * @param cryptoName Name of the cryptocurrency
-	 * @param cryptoSymbol Symbol of the cryptocurrency
-	 * @param coinData JsonNode containing the coin data
+	 * @param rootNode JsonNode containing the coin data
 	 * @return Coin object with the processed data
 	 */
-	public Coin createCoinFromJsonNode(String cryptoId, String cryptoName, String cryptoSymbol, JsonNode coinData) {
+	public Coin createCoinFromJsonNode(String cryptoId, JsonNode rootNode) {
 		Coin coin = new Coin();
 		coin.setCoinId(cryptoId);
-		coin.setCoinName(cryptoName);
-		coin.setSymbol(cryptoSymbol);
-		coin.setTimestamp(new Timestamp(coinData.get("last_updated_at").asLong() * 1000));
+		coin.setCoinName(getTextSafely(rootNode, "name"));
+		coin.setSymbol(getTextSafely(rootNode, "symbol"));
 
-		coin.setPriceEur(getDecimalSafely(coinData, "eur"));
-		coin.setPriceUsd(getDecimalSafely(coinData, "usd"));
-		coin.setPriceBtc(getDecimalSafely(coinData, "btc"));
-		coin.setPriceEth(getDecimalSafely(coinData, "eth"));
+		JsonNode marketData = rootNode.path("market_data");
+		if (!marketData.isMissingNode()) {
+			String lastUpdatedStr = getTextSafely(marketData, "last_updated");
+			coin.setTimestamp(parseTimestamp(lastUpdatedStr));
 
-		coin.setMarketCapEur(getDecimalSafely(coinData, "eur_market_cap"));
-		coin.setMarketCapUsd(getDecimalSafely(coinData, "usd_market_cap"));
-		coin.setMarketCapBtc(getDecimalSafely(coinData, "btc_market_cap"));
-		coin.setMarketCapEth(getDecimalSafely(coinData, "eth_market_cap"));
+			JsonNode currentPrice = marketData.path("current_price");
+			coin.setPriceEur(getDecimalSafely(currentPrice, "eur"));
+			coin.setPriceUsd(getDecimalSafely(currentPrice, "usd"));
+			coin.setPriceBtc(getDecimalSafely(currentPrice, "btc"));
+			coin.setPriceEth(getDecimalSafely(currentPrice, "eth"));
 
-		coin.setTotalVolumeEur(getDecimalSafely(coinData, "eur_24h_vol"));
-		coin.setTotalVolumeUsd(getDecimalSafely(coinData, "usd_24h_vol"));
-		coin.setTotalVolumeBtc(getDecimalSafely(coinData, "btc_24h_vol"));
-		coin.setTotalVolumeEth(getDecimalSafely(coinData, "eth_24h_vol"));
+			JsonNode marketCap = marketData.path("market_cap");
+			coin.setMarketCapEur(getDecimalSafely(marketCap, "eur"));
+			coin.setMarketCapUsd(getDecimalSafely(marketCap, "usd"));
+			coin.setMarketCapBtc(getDecimalSafely(marketCap, "btc"));
+			coin.setMarketCapEth(getDecimalSafely(marketCap, "eth"));
+
+			JsonNode totalVolume = marketData.path("total_volume");
+			coin.setTotalVolumeEur(getDecimalSafely(totalVolume, "eur"));
+			coin.setTotalVolumeUsd(getDecimalSafely(totalVolume, "usd"));
+			coin.setTotalVolumeBtc(getDecimalSafely(totalVolume, "btc"));
+			coin.setTotalVolumeEth(getDecimalSafely(totalVolume, "eth"));
+		}
 
 		return coin;
+	}
+
+	private Timestamp parseTimestamp(String dateTimeStr) {
+		try {
+			Instant instant = Instant.parse(dateTimeStr);
+			return new Timestamp(instant.toEpochMilli());
+		} catch (DateTimeParseException e) {
+			LOG.error("Failed to parse timestamp: {}. Using current time as fallback.", dateTimeStr, e);
+			return new Timestamp(System.currentTimeMillis());
+		}
 	}
 
 	/**
