@@ -45,6 +45,7 @@ class CoinGeckoServiceTest {
     void setUp() {
         coinGeckoService = new CoinGeckoService(config, httpClient, jsonProcessor, coinDataProcessor, rateLimiter);
         when(config.getCoingeckoApiUrl()).thenReturn("https://api.coingecko.com/api/v3");
+        when(config.getMaxRetries()).thenReturn(3);
     }
 
     /**
@@ -102,20 +103,23 @@ class CoinGeckoServiceTest {
         // Arrange
         List<String> cryptoIds = Arrays.asList("bitcoin", "ethereum");
         Map<String, Date> lastValidDates = new HashMap<>();
-        lastValidDates.put("bitcoin", Date.from(LocalDate.now().minusDays(5).atStartOfDay(ZoneId.systemDefault()).toInstant()));
+        lastValidDates.put("bitcoin", Date.from(LocalDate.now().minusDays(2).atStartOfDay(ZoneId.systemDefault()).toInstant()));
         lastValidDates.put("ethereum", Date.from(LocalDate.now().minusDays(3).atStartOfDay(ZoneId.systemDefault()).toInstant()));
 
-        String historicalDataResponse = "{\"id\":\"bitcoin\",\"symbol\":\"btc\",\"name\":\"Bitcoin\",\"market_data\":{\"current_price\":{\"usd\":45000}}}";
-        when(httpClient.sendGetRequest(anyString())).thenReturn(historicalDataResponse);
+        when(config.getMaxRetries()).thenReturn(3);
+//        when(config.getRateLimitDelay()).thenReturn(1000L);
+        when(httpClient.sendGetRequest(anyString())).thenReturn("{'market_data': {'current_price': {'usd': 50000}}}");
         when(coinDataProcessor.parseCoinData(anyString(), anyString(), any(LocalDate.class))).thenReturn(new Coin());
 
         // Act
         coinGeckoService.fetchAndSendHistoricalData(cryptoIds, lastValidDates, coin -> {});
 
         // Assert
-        verify(httpClient, atLeast(8)).sendGetRequest(anyString());
-        verify(coinDataProcessor, atLeast(8)).parseCoinData(anyString(), anyString(), any(LocalDate.class));
-        verify(rateLimiter, atLeast(8)).acquire();
+        verify(httpClient, atLeast(2)).sendGetRequest(contains("bitcoin"));
+        verify(httpClient, atLeast(3)).sendGetRequest(contains("ethereum"));
+        verify(coinDataProcessor, atLeast(2)).parseCoinData(anyString(), eq("bitcoin"), any(LocalDate.class));
+        verify(coinDataProcessor, atLeast(3)).parseCoinData(anyString(), eq("ethereum"), any(LocalDate.class));
+        verify(rateLimiter, atLeast(5)).acquire();
     }
 
     /**
@@ -140,7 +144,6 @@ class CoinGeckoServiceTest {
         verify(coinDataProcessor, times(timeFrame * cryptoIds.size())).parseCoinData(anyString(), anyString(), any(LocalDate.class));
         verify(rateLimiter, times(timeFrame * cryptoIds.size())).acquire();
     }
-
     /**
      * Tests the error handling in fetchAndSendCurrentData method when API calls fail.
      * Ensures that the method handles API failures gracefully and attempts retries.

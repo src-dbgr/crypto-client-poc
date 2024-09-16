@@ -30,6 +30,7 @@ public class HttpClientWrapper {
             return response.body();
         } else {
             LOG.error("HTTP request failed with status code: {}", response.statusCode());
+            LOG.error("HTTP request failed with body: {}", response.body());
             throw new IOException("HTTP request failed with status code: " + response.statusCode());
         }
     }
@@ -46,7 +47,7 @@ public class HttpClientWrapper {
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
             return response;
         } else {
-            LOG.error("HTTP request failed with status code: {}", response.statusCode());
+            LOG.error("HTTP request failed with response: {}", response.body());
             throw new IOException("HTTP request failed with status code: " + response.statusCode());
         }
     }

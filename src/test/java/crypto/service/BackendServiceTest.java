@@ -15,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.net.http.HttpResponse;
 import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Map;
@@ -85,19 +86,26 @@ class BackendServiceTest {
     @Test
     void getLastValidDatesFromBackend_shouldRetrieveDates() throws Exception {
         // Arrange
-        String response = "{\"bitcoin\":\"2023-05-01\",\"ethereum\":\"2023-05-02\"}";
-        JsonNode rootNode = mock(JsonNode.class);
-        JsonNode bitcoinNode = mock(JsonNode.class);
-        JsonNode ethereumNode = mock(JsonNode.class);
+        String bitcoinResponse = "{\"success\":true,\"data\":\"2023-05-01\",\"message\":\"Last valid date retrieved successfully\"}";
+        String ethereumResponse = "{\"success\":true,\"data\":\"2023-05-02\",\"message\":\"Last valid date retrieved successfully\"}";
 
-        when(httpClient.sendGetRequest(anyString())).thenReturn(response);
-        when(jsonProcessor.parseJson(response)).thenReturn(rootNode);
-        when(rootNode.has("bitcoin")).thenReturn(true);
-        when(rootNode.has("ethereum")).thenReturn(true);
-        when(rootNode.get("bitcoin")).thenReturn(bitcoinNode);
-        when(rootNode.get("ethereum")).thenReturn(ethereumNode);
-        when(bitcoinNode.asText()).thenReturn("2023-05-01");
-        when(ethereumNode.asText()).thenReturn("2023-05-02");
+        JsonNode bitcoinRootNode = mock(JsonNode.class);
+        JsonNode ethereumRootNode = mock(JsonNode.class);
+        JsonNode bitcoinDataNode = mock(JsonNode.class);
+        JsonNode ethereumDataNode = mock(JsonNode.class);
+
+        when(httpClient.sendGetRequest("http://localhost:8080/api/v1/coin/bitcoin/lastValidDate")).thenReturn(bitcoinResponse);
+        when(httpClient.sendGetRequest("http://localhost:8080/api/v1/coin/ethereum/lastValidDate")).thenReturn(ethereumResponse);
+
+        when(jsonProcessor.parseJson(bitcoinResponse)).thenReturn(bitcoinRootNode);
+        when(jsonProcessor.parseJson(ethereumResponse)).thenReturn(ethereumRootNode);
+
+        when(bitcoinRootNode.has("data")).thenReturn(true);
+        when(ethereumRootNode.has("data")).thenReturn(true);
+        when(bitcoinRootNode.get("data")).thenReturn(bitcoinDataNode);
+        when(ethereumRootNode.get("data")).thenReturn(ethereumDataNode);
+        when(bitcoinDataNode.asText()).thenReturn("2023-05-01");
+        when(ethereumDataNode.asText()).thenReturn("2023-05-02");
 
         // Act
         Map<String, Date> result = backendService.getLastValidDatesFromBackend();
@@ -107,5 +115,13 @@ class BackendServiceTest {
         assertEquals(2, result.size());
         assertTrue(result.containsKey("bitcoin"));
         assertTrue(result.containsKey("ethereum"));
+
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+        assertEquals(dateFormat.parse("2023-05-01"), result.get("bitcoin"));
+        assertEquals(dateFormat.parse("2023-05-02"), result.get("ethereum"));
+
+        // Verify that the correct URLs were called
+        verify(httpClient).sendGetRequest("http://localhost:8080/api/v1/coin/bitcoin/lastValidDate");
+        verify(httpClient).sendGetRequest("http://localhost:8080/api/v1/coin/ethereum/lastValidDate");
     }
 }

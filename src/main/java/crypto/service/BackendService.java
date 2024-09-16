@@ -68,13 +68,13 @@ public class BackendService {
 		SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
 
 		for (String coinId : cryptoIds) {
-			String url = backendUrl + "/lastValidDate?coinId=" + coinId;
+			String url = backendUrl + "/" + coinId + "/lastValidDate";
 			try {
 				String response = httpClient.sendGetRequest(url);
 				LOG.info("Last valid date for coin {} is {}", coinId, response);
 				JsonNode rootNode = jsonProcessor.parseJson(response);
-				if (rootNode.has(coinId)) {
-					String dateString = rootNode.get(coinId).asText();
+				if (rootNode.has("data")) {
+					String dateString = rootNode.get("data").asText();
 					try {
 						Date date = dateFormat.parse(dateString);
 						result.put(coinId, date);

@@ -3,7 +3,6 @@ package crypto.processor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.coin.domain.model.Coin;
-import crypto.service.CoinGeckoService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,7 +27,7 @@ public class CoinDataProcessor {
 	 * @param rootNode JsonNode containing the coin data
 	 * @return Coin object with the processed data
 	 */
-	public Coin createCoinFromJsonNode(String cryptoId, JsonNode rootNode) {
+	public Coin	createCoinFromJsonNode(String cryptoId, JsonNode rootNode) {
 		Coin coin = new Coin();
 		coin.setCoinId(cryptoId);
 		coin.setCoinName(getTextSafely(rootNode, "name"));

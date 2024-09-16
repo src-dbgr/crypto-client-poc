@@ -85,9 +85,7 @@ public class CoinGeckoService implements CryptoDataSource {
                 String dateStr = startDate.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
                 String url = String.format("%s/coins/%s/history?date=%s", config.getCoingeckoApiUrl(), coinId, dateStr);
 
-                String response = httpClient.sendGetRequest(url);
-                Coin coin = coinDataProcessor.parseCoinData(response, coinId, startDate);
-                sendToBackend.accept(coin);
+                processHistoricalData(url, coinId, startDate, sendToBackend);
 
                 startDate = startDate.plusDays(1);
                 rateLimiter.acquire();
@@ -95,7 +93,7 @@ public class CoinGeckoService implements CryptoDataSource {
         }
     }
 
-    private void processHistoricalData(String url, String coinId, LocalDate date, Consumer<Coin> sendToBackend) throws Exception {
+    private void processHistoricalData(String url, String coinId, LocalDate date, Consumer<Coin> sendToBackend) throws InterruptedException {
         LOG.info("Process historical Coin Data for Crypto: {} and Date: {}", coinId, date);
         for (int retryCount = 0; retryCount < config.getMaxRetries(); retryCount++) {
             try {
@@ -127,9 +125,7 @@ public class CoinGeckoService implements CryptoDataSource {
                 String dateString = date.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
                 String url = String.format("%s/coins/%s/history?date=%s", config.getCoingeckoApiUrl(), coinId, dateString);
 
-                String response = httpClient.sendGetRequest(url);
-                Coin coin = coinDataProcessor.parseCoinData(response, coinId, date);
-                sendToBackend.accept(coin);
+                processHistoricalData(url, coinId, date, sendToBackend);
 
                 rateLimiter.acquire();
             }
