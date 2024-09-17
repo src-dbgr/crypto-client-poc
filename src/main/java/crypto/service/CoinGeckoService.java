@@ -45,6 +45,45 @@ public class CoinGeckoService implements CryptoDataSource {
         }
     }
 
+    @Override
+    public void fetchAndSendHistoricalData(List<String> cryptoIds, Map<String, Date> lastValidDates, Consumer<Coin> sendToBackend) throws Exception {
+        for (String coinId : cryptoIds) {
+            Date lastValidDate = lastValidDates.get(coinId);
+            LocalDate startDate = lastValidDate != null ?
+                    lastValidDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate().plusDays(1) :
+                    LocalDate.now().minusYears(1);
+            LocalDate endDate = LocalDate.now();
+
+            while (!startDate.isAfter(endDate)) {
+                String dateStr = startDate.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+                String url = String.format("%s/coins/%s/history?date=%s", config.getCoingeckoApiUrl(), coinId, dateStr);
+
+                processHistoricalData(url, coinId, startDate, sendToBackend);
+
+                startDate = startDate.plusDays(1);
+                rateLimiter.acquire();
+            }
+        }
+    }
+
+    @Override
+    public void fetchAndSendAllHistoricalData(List<String> cryptoIds, int timeFrame, Consumer<Coin> sendToBackend) throws Exception {
+        LocalDate endDate = LocalDate.now();
+        LocalDate startDate = endDate.minusDays(timeFrame - 1);
+
+        for (String coinId : cryptoIds) {
+            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                String dateString = date.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
+                String url = String.format("%s/coins/%s/history?date=%s", config.getCoingeckoApiUrl(), coinId, dateString);
+
+                processHistoricalData(url, coinId, date, sendToBackend);
+
+                rateLimiter.acquire();
+            }
+        }
+    }
+
+
     private void processCryptoData(String url, String cryptoId, Consumer<Coin> sendToBackend) throws InterruptedException {
         LOG.info("Process crypto data for Crypto {}", cryptoId);
         for (int retryCount = 0; retryCount < config.getMaxRetries(); retryCount++) {
@@ -72,27 +111,6 @@ public class CoinGeckoService implements CryptoDataSource {
         }
     }
 
-    @Override
-    public void fetchAndSendHistoricalData(List<String> cryptoIds, Map<String, Date> lastValidDates, Consumer<Coin> sendToBackend) throws Exception {
-        for (String coinId : cryptoIds) {
-            Date lastValidDate = lastValidDates.get(coinId);
-            LocalDate startDate = lastValidDate != null ?
-                    lastValidDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate().plusDays(1) :
-                    LocalDate.now().minusYears(1);
-            LocalDate endDate = LocalDate.now();
-
-            while (!startDate.isAfter(endDate)) {
-                String dateStr = startDate.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
-                String url = String.format("%s/coins/%s/history?date=%s", config.getCoingeckoApiUrl(), coinId, dateStr);
-
-                processHistoricalData(url, coinId, startDate, sendToBackend);
-
-                startDate = startDate.plusDays(1);
-                rateLimiter.acquire();
-            }
-        }
-    }
-
     private void processHistoricalData(String url, String coinId, LocalDate date, Consumer<Coin> sendToBackend) throws InterruptedException {
         LOG.info("Process historical Coin Data for Crypto: {} and Date: {}", coinId, date);
         for (int retryCount = 0; retryCount < config.getMaxRetries(); retryCount++) {
@@ -111,23 +129,6 @@ public class CoinGeckoService implements CryptoDataSource {
                     LOG.info("Rate Limiting hit. Retrying in {} milliseconds...", delay);
                     TimeUnit.MILLISECONDS.sleep(delay);  // Backoff
                 }
-            }
-        }
-    }
-
-    @Override
-    public void fetchAndSendAllHistoricalData(List<String> cryptoIds, int timeFrame, Consumer<Coin> sendToBackend) throws Exception {
-        LocalDate endDate = LocalDate.now();
-        LocalDate startDate = endDate.minusDays(timeFrame - 1);
-
-        for (String coinId : cryptoIds) {
-            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-                String dateString = date.format(DateTimeFormatter.ofPattern("dd-MM-yyyy"));
-                String url = String.format("%s/coins/%s/history?date=%s", config.getCoingeckoApiUrl(), coinId, dateString);
-
-                processHistoricalData(url, coinId, date, sendToBackend);
-
-                rateLimiter.acquire();
             }
         }
     }
