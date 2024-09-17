@@ -38,7 +38,7 @@ class CryptoClientTest {
     void updateCurrentData() throws Exception {
         // Arrange
         List<String> cryptoIds = Arrays.asList("bitcoin", "ethereum");
-        when(config.getCryptoIds()).thenReturn(cryptoIds);
+        when(config.getAllCryptoIds()).thenReturn(cryptoIds);
 
         // Act
         cryptoClient.updateCurrentData();
@@ -56,7 +56,7 @@ class CryptoClientTest {
         lastValidDates.put("bitcoin", new Date());
         lastValidDates.put("ethereum", new Date());
 
-        when(config.getCryptoIds()).thenReturn(cryptoIds);
+        when(config.getAllCryptoIds()).thenReturn(cryptoIds);
         when(backendService.getLastValidDatesFromBackend()).thenReturn(lastValidDates);
 
         // Act
@@ -73,7 +73,7 @@ class CryptoClientTest {
         List<String> cryptoIds = Arrays.asList("bitcoin", "ethereum");
         int timeFrame = 60;
 
-        when(config.getCryptoIds()).thenReturn(cryptoIds);
+        when(config.getAllCryptoIds()).thenReturn(cryptoIds);
 
         // Act
         cryptoClient.fetchAllHistoricalData(timeFrame);

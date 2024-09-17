@@ -2,6 +2,7 @@ package crypto.config;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Configuration class for the CryptoClient.
@@ -14,13 +15,6 @@ public class CryptoConfig {
 	private final long rateLimitDelay = 5000;
 	private final String sourceFile = "coingecko.json";
 	private final String targetFile = "portfoliocoingecko.json";
-	private final List<String> cryptoIds = Arrays.asList(
-			"bitcoin", "ethereum", "cardano", "polkadot", "chainlink",
-			"stellar", "zcash", "algorand", "bitcoin-diamond", "litecoin",
-			"compound-ether", "compound-coin", "bzx-protocol", "band-protocol",
-			"ampleforth", "zilliqa", "vechain", "waves", "uma", "ocean-protocol",
-			"theta-token", "singularitynet", "thorchain", "kava"
-	);
 
 	/**
 	 * Gets the URL of the backend API.
@@ -59,8 +53,12 @@ public class CryptoConfig {
 	public String getTargetFile() { return targetFile; }
 
 	/**
-	 * Gets the list of cryptocurrency IDs to be processed.
-	 * @return The list of cryptocurrency IDs
+	 * Gets the list of all supported cryptocurrency IDs.
+	 * @return The list of all supported cryptocurrency IDs
 	 */
-	public List<String> getCryptoIds() { return cryptoIds; }
+	public List<String> getAllCryptoIds() {
+		return Arrays.stream(CryptoId.values())
+				.map(CryptoId::getId)
+				.collect(Collectors.toList());
+	}
 }

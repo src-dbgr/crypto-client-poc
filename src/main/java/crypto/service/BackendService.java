@@ -23,6 +23,7 @@ public class BackendService {
 	private final HttpClientWrapper httpClient;
 	private final JsonProcessor jsonProcessor;
 	private final List<String> cryptoIds;
+	private final SimpleDateFormat dateFormat;
 
 	/**
 	 * Constructor for BackendService.
@@ -37,6 +38,7 @@ public class BackendService {
 		this.httpClient = httpClient;
 		this.jsonProcessor = jsonProcessor;
 		this.cryptoIds = cryptoIds;
+		this.dateFormat = new SimpleDateFormat("yyyy-MM-dd");
 	}
 
 	/**
@@ -68,30 +70,61 @@ public class BackendService {
 	 */
 	public Map<String, Date> getLastValidDatesFromBackend() throws IOException, InterruptedException {
 		Map<String, Date> result = new HashMap<>();
-		SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
 
 		for (String coinId : cryptoIds) {
-			String url = backendUrl + "/" + coinId + "/lastValidDate";
-			try {
-				String response = httpClient.sendGetRequest(url);
-				LOG.info("Last valid date for coin {} is {}", coinId, response);
-				JsonNode rootNode = jsonProcessor.parseJson(response);
-				if (rootNode != null && rootNode.has("data")) {
-					String dateString = rootNode.get("data").asText();
-					try {
-						Date date = dateFormat.parse(dateString);
-						result.put(coinId, date);
-					} catch (ParseException e) {
-						LOG.warn("Failed to parse date for coin {}. Date string: {}", coinId, dateString, e);
-					}
-				} else {
-					LOG.warn("No valid date found for coin {}", coinId);
-				}
-			} catch (IOException e) {
-				LOG.error("Failed to get last valid date for coin {}. Error: {}", coinId, e.getMessage());
-				throw e; // Re-throw the exception to be handled by the caller
+			Date lastValidDate = getLastValidDateForCoin(coinId);
+			if (lastValidDate != null) {
+				result.put(coinId, lastValidDate);
 			}
 		}
+
 		return result;
+	}
+
+	/**
+	 * Retrieves the last valid date for a single cryptocurrency from the backend.
+	 * This method sends a GET request to the backend for the specified cryptocurrency ID and parses the response.
+	 *
+	 * @param coinId The ID of the cryptocurrency to fetch the last valid date for
+	 * @return The last valid date for the specified cryptocurrency, or null if not found
+	 * @throws IOException if there's an error in network communication
+	 * @throws InterruptedException if the operation is interrupted
+	 */
+	public Date getLastValidDateFromBackend(String coinId) throws IOException, InterruptedException {
+		return getLastValidDateForCoin(coinId);
+	}
+
+	/**
+	 * Retrieves the last valid date for a single cryptocurrency from the backend.
+	 * This private method encapsulates the logic for fetching and parsing the last valid date.
+	 *
+	 * @param coinId The ID of the cryptocurrency to fetch the last valid date for
+	 * @return The last valid date for the specified cryptocurrency, or null if not found
+	 * @throws IOException if there's an error in network communication
+	 * @throws InterruptedException if the operation is interrupted
+	 */
+	private Date getLastValidDateForCoin(String coinId) throws IOException, InterruptedException {
+		String url = backendUrl + "/" + coinId + "/lastValidDate";
+
+		try {
+			String response = httpClient.sendGetRequest(url);
+			LOG.info("Last valid date for coin {} is {}", coinId, response);
+			JsonNode rootNode = jsonProcessor.parseJson(response);
+			if (rootNode != null && rootNode.has("data")) {
+				String dateString = rootNode.get("data").asText();
+				try {
+					return dateFormat.parse(dateString);
+				} catch (ParseException e) {
+					LOG.warn("Failed to parse date for coin {}. Date string: {}", coinId, dateString, e);
+				}
+			} else {
+				LOG.warn("No valid date found for coin {}", coinId);
+			}
+		} catch (IOException e) {
+			LOG.error("Failed to get last valid date for coin {}. Error: {}", coinId, e.getMessage());
+			throw e; // Re-throw the exception to be handled by the caller
+		}
+
+		return null;
 	}
 }
