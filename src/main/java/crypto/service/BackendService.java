@@ -54,7 +54,7 @@ public class BackendService {
 			HttpResponse<String> response = httpClient.sendPostRequest(backendUrl, jsonCoin);
 			LOG.info("Backend response: {}", response);
 		} catch (Exception e) {
-			LOG.error("Error sending coin data to backend", e);
+			LOG.error("Error sending coin data to backend. Make sure the backend service is running and accessible.", e);
 		}
 	}
 
