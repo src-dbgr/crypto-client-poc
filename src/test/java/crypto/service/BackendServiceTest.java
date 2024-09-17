@@ -1,127 +1,161 @@
 package crypto.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sam.coin.domain.model.Coin;
 import crypto.processor.JsonProcessor;
 import crypto.util.HttpClientWrapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.http.HttpResponse;
 import java.sql.Timestamp;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class BackendServiceTest {
 
     @Mock
-    private HttpClientWrapper httpClient;
+    private HttpClientWrapper httpClientMock;
 
     @Mock
-    private JsonProcessor jsonProcessor;
-
-    @Mock
-    private ObjectMapper objectMapper;
-
-    @Mock
-    private ObjectWriter objectWriter;
+    private JsonProcessor jsonProcessorMock;
 
     private BackendService backendService;
 
+    private static final String BASE_URL = "http://localhost:8080/api/v1/coin";
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
     @BeforeEach
     void setUp() {
-        backendService = new BackendService("http://localhost:8080/api/v1/coin", httpClient, jsonProcessor, Arrays.asList("bitcoin", "ethereum"));
+        backendService = new BackendService(BASE_URL, httpClientMock, jsonProcessorMock, Arrays.asList("bitcoin", "ethereum"));
     }
 
-    /**
-     * Test case to verify that coin data is successfully sent to the backend.
-     * It checks if the appropriate methods are called with the correct parameters
-     * and if the response is properly handled.
-     */
     @Test
+    @DisplayName("Verify successful POST request of coin data to backend API")
     void sendCoinDataToBackend_shouldSendDataSuccessfully() throws Exception {
         // Arrange
-        Coin coin = new Coin();
-        coin.setCoinId("bitcoin");
-        coin.setTimestamp(new Timestamp(System.currentTimeMillis()));
-        coin.setPriceUsd(new BigDecimal("50000"));
+        Coin coin = createTestCoin("bitcoin", "50000");
+        String jsonCoin = objectMapper.writeValueAsString(coin);
 
-        String jsonCoin = "{\"id\":\"bitcoin\"}";
-        String prettyJsonCoin = "{\n  \"id\": \"bitcoin\"\n}";
-        HttpResponse<String> response = mock(HttpResponse.class);
+        when(jsonProcessorMock.getObjectMapper()).thenReturn(objectMapper);
 
-        when(jsonProcessor.getObjectMapper()).thenReturn(objectMapper);
-        when(objectMapper.writeValueAsString(coin)).thenReturn(jsonCoin);
-        when(objectMapper.writerWithDefaultPrettyPrinter()).thenReturn(objectWriter);
-        when(objectWriter.writeValueAsString(coin)).thenReturn(prettyJsonCoin);
-        when(httpClient.sendPostRequest(anyString(), eq(jsonCoin))).thenReturn(response);
+        @SuppressWarnings("unchecked")
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(httpClientMock.sendPostRequest(eq(BASE_URL), anyString())).thenReturn(mockResponse);
 
         // Act
         backendService.sendCoinDataToBackend(coin);
 
         // Assert
-        verify(httpClient).sendPostRequest(anyString(), eq(jsonCoin));
-        verify(objectMapper).writeValueAsString(coin);
-        verify(objectMapper).writerWithDefaultPrettyPrinter();
-        verify(objectWriter).writeValueAsString(coin);
+        verify(httpClientMock).sendPostRequest(eq(BASE_URL), eq(jsonCoin));
     }
 
-    /**
-     * Test case to verify that the last valid dates are correctly retrieved from the backend.
-     * It checks if the response is properly parsed and if the returned map contains
-     * the expected data for each cryptocurrency.
-     */
     @Test
-    void getLastValidDatesFromBackend_shouldRetrieveDates() throws Exception {
+    @DisplayName("Ensure graceful handling of network errors during coin data transmission")
+    void sendCoinDataToBackend_shouldHandleNetworkError() throws Exception {
         // Arrange
-        String bitcoinResponse = "{\"success\":true,\"data\":\"2023-05-01\",\"message\":\"Last valid date retrieved successfully\"}";
-        String ethereumResponse = "{\"success\":true,\"data\":\"2023-05-02\",\"message\":\"Last valid date retrieved successfully\"}";
+        Coin coin = createTestCoin("ethereum", "2000");
+        when(jsonProcessorMock.getObjectMapper()).thenReturn(objectMapper);
+        when(httpClientMock.sendPostRequest(anyString(), anyString())).thenThrow(new IOException("Network error"));
 
-        JsonNode bitcoinRootNode = mock(JsonNode.class);
-        JsonNode ethereumRootNode = mock(JsonNode.class);
-        JsonNode bitcoinDataNode = mock(JsonNode.class);
-        JsonNode ethereumDataNode = mock(JsonNode.class);
+        // Act & Assert
+        assertDoesNotThrow(() -> backendService.sendCoinDataToBackend(coin));
+        verify(httpClientMock).sendPostRequest(eq(BASE_URL), anyString());
+    }
 
-        when(httpClient.sendGetRequest("http://localhost:8080/api/v1/coin/bitcoin/lastValidDate")).thenReturn(bitcoinResponse);
-        when(httpClient.sendGetRequest("http://localhost:8080/api/v1/coin/ethereum/lastValidDate")).thenReturn(ethereumResponse);
+    @ParameterizedTest(name = "{index} => coinId={0}, dateString={1}")
+    @DisplayName("Validate retrieval and parsing of last valid dates for {0}")
+    @CsvSource({
+            "bitcoin,2023-09-17T00:00:00.000+00:00",
+            "ethereum,2023-09-16T00:00:00.000+00:00"
+    })
+    void getLastValidDatesFromBackend_shouldRetrieveDates(String coinId, String dateString) throws Exception {
+        // Arrange
+        backendService = new BackendService(BASE_URL, httpClientMock, jsonProcessorMock, Collections.singletonList(coinId));
 
-        when(jsonProcessor.parseJson(bitcoinResponse)).thenReturn(bitcoinRootNode);
-        when(jsonProcessor.parseJson(ethereumResponse)).thenReturn(ethereumRootNode);
+        ObjectNode responseNode = objectMapper.createObjectNode();
+        responseNode.put("success", true);
+        responseNode.put("data", dateString);
+        String responseJson = objectMapper.writeValueAsString(responseNode);
 
-        when(bitcoinRootNode.has("data")).thenReturn(true);
-        when(ethereumRootNode.has("data")).thenReturn(true);
-        when(bitcoinRootNode.get("data")).thenReturn(bitcoinDataNode);
-        when(ethereumRootNode.get("data")).thenReturn(ethereumDataNode);
-        when(bitcoinDataNode.asText()).thenReturn("2023-05-01");
-        when(ethereumDataNode.asText()).thenReturn("2023-05-02");
+        when(httpClientMock.sendGetRequest(BASE_URL + "/" + coinId + "/lastValidDate")).thenReturn(responseJson);
+        when(jsonProcessorMock.parseJson(responseJson)).thenReturn(objectMapper.readTree(responseJson));
 
         // Act
         Map<String, Date> result = backendService.getLastValidDatesFromBackend();
 
         // Assert
         assertFalse(result.isEmpty());
-        assertEquals(2, result.size());
-        assertTrue(result.containsKey("bitcoin"));
-        assertTrue(result.containsKey("ethereum"));
+        assertEquals(1, result.size());
+        assertTrue(result.containsKey(coinId));
+        assertEquals(parseDate(dateString), result.get(coinId));
 
+        verify(httpClientMock).sendGetRequest(BASE_URL + "/" + coinId + "/lastValidDate");
+        verify(jsonProcessorMock).parseJson(responseJson);
+    }
+
+    @Test
+    @DisplayName("Confirm robust handling of API responses with invalid date formats")
+    void getLastValidDatesFromBackend_shouldHandleInvalidDateFormat() throws Exception {
+        // Arrange
+        String invalidDateString = "invalid-date";
+        ObjectNode responseNode = objectMapper.createObjectNode();
+        responseNode.put("success", true);
+        responseNode.put("data", invalidDateString);
+        String responseJson = objectMapper.writeValueAsString(responseNode);
+
+        when(httpClientMock.sendGetRequest(anyString())).thenReturn(responseJson);
+        when(jsonProcessorMock.parseJson(responseJson)).thenReturn(objectMapper.readTree(responseJson));
+
+        // Act
+        Map<String, Date> result = backendService.getLastValidDatesFromBackend();
+
+        // Assert
+        assertTrue(result.isEmpty());
+        verify(httpClientMock, times(2)).sendGetRequest(anyString());
+        verify(jsonProcessorMock, times(2)).parseJson(responseJson);
+    }
+
+    @Test
+    @DisplayName("Assess error propagation for network failures during date retrieval")
+    void getLastValidDatesFromBackend_shouldHandleNetworkError() throws Exception {
+        // Arrange
+        when(httpClientMock.sendGetRequest(anyString())).thenThrow(new IOException("Network error"));
+
+        // Act & Assert
+        assertThrows(IOException.class, () -> backendService.getLastValidDatesFromBackend());
+        verify(httpClientMock, times(1)).sendGetRequest(anyString());
+    }
+
+    private Coin createTestCoin(String crypto, String price) {
+        Coin coin = new Coin();
+        coin.setCoinId(crypto);
+        coin.setTimestamp(new Timestamp(System.currentTimeMillis()));
+        coin.setPriceUsd(new BigDecimal(price));
+        return coin;
+    }
+
+    private Date parseDate(String dateString) throws ParseException {
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
-        assertEquals(dateFormat.parse("2023-05-01"), result.get("bitcoin"));
-        assertEquals(dateFormat.parse("2023-05-02"), result.get("ethereum"));
-
-        // Verify that the correct URLs were called
-        verify(httpClient).sendGetRequest("http://localhost:8080/api/v1/coin/bitcoin/lastValidDate");
-        verify(httpClient).sendGetRequest("http://localhost:8080/api/v1/coin/ethereum/lastValidDate");
+        return dateFormat.parse(dateString);
     }
 }

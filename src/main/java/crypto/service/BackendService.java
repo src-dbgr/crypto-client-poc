@@ -73,7 +73,7 @@ public class BackendService {
 				String response = httpClient.sendGetRequest(url);
 				LOG.info("Last valid date for coin {} is {}", coinId, response);
 				JsonNode rootNode = jsonProcessor.parseJson(response);
-				if (rootNode.has("data")) {
+				if (rootNode != null && rootNode.has("data")) {
 					String dateString = rootNode.get("data").asText();
 					try {
 						Date date = dateFormat.parse(dateString);
