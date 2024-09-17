@@ -15,6 +15,7 @@ import java.time.format.DateTimeParseException;
 
 /**
  * Processor for coin data.
+ * This class is responsible for parsing and processing cryptocurrency data from JSON format.
  */
 public class CoinDataProcessor {
 
@@ -27,7 +28,7 @@ public class CoinDataProcessor {
 	 * @param rootNode JsonNode containing the coin data
 	 * @return Coin object with the processed data
 	 */
-	public Coin	createCoinFromJsonNode(String cryptoId, JsonNode rootNode) {
+	public Coin createCoinFromJsonNode(String cryptoId, JsonNode rootNode) {
 		Coin coin = new Coin();
 		coin.setCoinId(cryptoId);
 		coin.setCoinName(getTextSafely(rootNode, "name"));
@@ -60,6 +61,12 @@ public class CoinDataProcessor {
 		return coin;
 	}
 
+	/**
+	 * Parses a timestamp string into a Timestamp object.
+	 *
+	 * @param dateTimeStr The timestamp string to parse
+	 * @return A Timestamp object representing the parsed date and time
+	 */
 	private Timestamp parseTimestamp(String dateTimeStr) {
 		try {
 			Instant instant = Instant.parse(dateTimeStr);
@@ -102,6 +109,12 @@ public class CoinDataProcessor {
 		return coin;
 	}
 
+	/**
+	 * Sets the prices for a coin from the given JsonNode.
+	 *
+	 * @param coin The Coin object to update
+	 * @param priceNode The JsonNode containing price data
+	 */
 	private void setCoinPrices(Coin coin, JsonNode priceNode) {
 		if (priceNode != null) {
 			coin.setPriceEur(getDecimalSafely(priceNode, "eur"));
@@ -111,6 +124,12 @@ public class CoinDataProcessor {
 		}
 	}
 
+	/**
+	 * Sets the market caps for a coin from the given JsonNode.
+	 *
+	 * @param coin The Coin object to update
+	 * @param marketCapNode The JsonNode containing market cap data
+	 */
 	private void setCoinMarketCaps(Coin coin, JsonNode marketCapNode) {
 		if (marketCapNode != null) {
 			coin.setMarketCapEur(getDecimalSafely(marketCapNode, "eur"));
@@ -120,6 +139,12 @@ public class CoinDataProcessor {
 		}
 	}
 
+	/**
+	 * Sets the volumes for a coin from the given JsonNode.
+	 *
+	 * @param coin The Coin object to update
+	 * @param volumeNode The JsonNode containing volume data
+	 */
 	private void setCoinVolumes(Coin coin, JsonNode volumeNode) {
 		if (volumeNode != null) {
 			coin.setTotalVolumeEur(getDecimalSafely(volumeNode, "eur"));
@@ -129,6 +154,12 @@ public class CoinDataProcessor {
 		}
 	}
 
+	/**
+	 * Sets the community data for a coin from the given JsonNode.
+	 *
+	 * @param coin The Coin object to update
+	 * @param communityData The JsonNode containing community data
+	 */
 	private void setCommunityData(Coin coin, JsonNode communityData) {
 		if (communityData != null) {
 			coin.setTwitterFollowers(getLongSafely(communityData, "twitter_followers"));
@@ -139,6 +170,12 @@ public class CoinDataProcessor {
 		}
 	}
 
+	/**
+	 * Sets the developer data for a coin from the given JsonNode.
+	 *
+	 * @param coin The Coin object to update
+	 * @param developerData The JsonNode containing developer data
+	 */
 	private void setDeveloperData(Coin coin, JsonNode developerData) {
 		if (developerData != null) {
 			coin.setDevForks(getLongSafely(developerData, "forks"));
@@ -157,22 +194,49 @@ public class CoinDataProcessor {
 		}
 	}
 
+	/**
+	 * Sets the public interest stats for a coin from the given JsonNode.
+	 *
+	 * @param coin The Coin object to update
+	 * @param publicInterestStats The JsonNode containing public interest stats
+	 */
 	private void setPublicInterestStats(Coin coin, JsonNode publicInterestStats) {
 		if (publicInterestStats != null) {
 			coin.setPublicAlexaRank(getLongSafely(publicInterestStats, "alexa_rank"));
 		}
 	}
 
+	/**
+	 * Safely gets a BigDecimal value from a JsonNode.
+	 *
+	 * @param node The JsonNode to get the value from
+	 * @param fieldName The name of the field to get
+	 * @return The BigDecimal value, or BigDecimal.ZERO if the field is missing or not a number
+	 */
 	private BigDecimal getDecimalSafely(JsonNode node, String fieldName) {
 		JsonNode field = node.get(fieldName);
 		return (field != null && field.isNumber()) ? field.decimalValue() : BigDecimal.ZERO;
 	}
 
+	/**
+	 * Safely gets a Long value from a JsonNode.
+	 *
+	 * @param node The JsonNode to get the value from
+	 * @param fieldName The name of the field to get
+	 * @return The Long value, or 0L if the field is missing or not a number
+	 */
 	private Long getLongSafely(JsonNode node, String fieldName) {
 		JsonNode field = node.get(fieldName);
 		return (field != null && field.isNumber()) ? field.longValue() : 0L;
 	}
 
+	/**
+	 * Safely gets a String value from a JsonNode.
+	 *
+	 * @param node The JsonNode to get the value from
+	 * @param fieldName The name of the field to get
+	 * @return The String value, or an empty string if the field is missing
+	 */
 	private String getTextSafely(JsonNode node, String fieldName) {
 		JsonNode field = node.get(fieldName);
 		return (field != null) ? field.asText() : "";

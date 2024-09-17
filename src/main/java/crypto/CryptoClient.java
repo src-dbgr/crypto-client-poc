@@ -91,11 +91,11 @@ public class CryptoClient {
 
 		try {
 			LOG.info("Updating current crypto data...");
-            client.updateCurrentData();
+//            client.updateCurrentData();
 			LOG.info("Current crypto data update completed.");
 
 			LOG.info("Fetching and updating historical data...");
-//			client.updateHistoricalData();
+			client.updateHistoricalData();
 			LOG.info("Historical data update completed.");
 
 			LOG.info("Fetching all historical data for the last 60 days...");

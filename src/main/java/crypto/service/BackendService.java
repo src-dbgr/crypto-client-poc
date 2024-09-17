@@ -15,6 +15,7 @@ import java.util.*;
 
 /**
  * Service for interacting with the backend API.
+ * This class handles sending coin data to the backend and retrieving last valid dates for cryptocurrencies.
  */
 public class BackendService {
 	private static final Logger LOG = LoggerFactory.getLogger(BackendService.class);
@@ -40,6 +41,7 @@ public class BackendService {
 
 	/**
 	 * Sends coin data to the backend.
+	 * This method serializes the coin data to JSON and sends it via a POST request.
 	 *
 	 * @param coin Coin object containing the data to be sent
 	 */
@@ -58,6 +60,7 @@ public class BackendService {
 
 	/**
 	 * Retrieves the last valid dates for each cryptocurrency from the backend.
+	 * This method sends GET requests to the backend for each cryptocurrency ID and parses the response.
 	 *
 	 * @return Map of cryptocurrency IDs to their last valid dates
 	 * @throws IOException if there's an error in network communication
