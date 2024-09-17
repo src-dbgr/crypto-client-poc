@@ -5,6 +5,7 @@ import crypto.service.BackendService;
 import crypto.service.api.CryptoDataSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -33,10 +34,11 @@ class CryptoClientTest {
     }
 
     @Test
-    void updateCurrentData_shouldFetchAndSendCurrentData() throws Exception {
+    @DisplayName("Should fetch and send current data for all configured cryptocurrencies")
+    void updateCurrentData() throws Exception {
         // Arrange
         List<String> cryptoIds = Arrays.asList("bitcoin", "ethereum");
-        when(config.getCryptoIds()).thenReturn(cryptoIds);
+        when(config.getAllCryptoIds()).thenReturn(cryptoIds);
 
         // Act
         cryptoClient.updateCurrentData();
@@ -46,14 +48,15 @@ class CryptoClientTest {
     }
 
     @Test
-    void updateHistoricalData_shouldFetchAndSendHistoricalData() throws Exception {
+    @DisplayName("Should fetch and send historical data based on last valid dates")
+    void updateHistoricalData() throws Exception {
         // Arrange
         List<String> cryptoIds = Arrays.asList("bitcoin", "ethereum");
         Map<String, Date> lastValidDates = new HashMap<>();
         lastValidDates.put("bitcoin", new Date());
         lastValidDates.put("ethereum", new Date());
 
-        when(config.getCryptoIds()).thenReturn(cryptoIds);
+        when(config.getAllCryptoIds()).thenReturn(cryptoIds);
         when(backendService.getLastValidDatesFromBackend()).thenReturn(lastValidDates);
 
         // Act
@@ -64,12 +67,13 @@ class CryptoClientTest {
     }
 
     @Test
-    void fetchAllHistoricalData_shouldFetchAndSendAllHistoricalData() throws Exception {
+    @DisplayName("Should fetch and send all historical data for a specified time frame")
+    void fetchAllHistoricalData() throws Exception {
         // Arrange
         List<String> cryptoIds = Arrays.asList("bitcoin", "ethereum");
         int timeFrame = 60;
 
-        when(config.getCryptoIds()).thenReturn(cryptoIds);
+        when(config.getAllCryptoIds()).thenReturn(cryptoIds);
 
         // Act
         cryptoClient.fetchAllHistoricalData(timeFrame);

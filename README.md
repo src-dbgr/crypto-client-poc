@@ -67,23 +67,27 @@ Ensuring these prerequisites are met will allow for smooth compilation, executio
 
 ## Usage
 
-The CryptoClient offers the following main operations:
+The CryptoClient now offers the following main operations for both bulk and individual cryptocurrency data fetching:
 
 1. `updateCurrentData()`: Updates all chosen and backend-enabled cryptos with current price and metadata information.
-
-2. `updateHistoricalData()`: Fetches and updates historical data for all cryptocurrencies based on the last valid date from the backend.
-
-3. `fetchAllHistoricalData(int timeFrame)`: Updates historical data for all cryptocurrencies for the specified number of days, starting from today and going backwards.
+2. `updateCurrentData(CryptoId cryptoId)`: Updates a single cryptocurrency with current price and metadata information.
+3. `updateHistoricalData()`: Fetches and updates historical data for all cryptocurrencies based on the last valid date from the backend.
+4. `updateHistoricalData(CryptoId cryptoId)`: Fetches and updates historical data for a single cryptocurrency based on the last valid date from the backend.
+5. `fetchAllHistoricalData(int timeFrame)`: Updates historical data for all cryptocurrencies for the specified number of days, starting from today and going backwards.
+6. `fetchAllHistoricalData(CryptoId cryptoId, int timeFrame)`: Updates historical data for a single cryptocurrency for the specified number of days, starting from today and going backwards.
 
 To use the CryptoClient:
 
 1. Ensure the [crypto-monitor-api-poc](https://github.com/src-dbgr/crypto-monitor-api-poc) is up and running.
-2. Modify the `cryptoIds` list in the `CryptoConfig` class to include the cryptocurrencies you're interested in.
-3. In the `main` method of `CryptoClient`, uncomment or modify the operations you want to execute.
-   > the major methods are:
+2. The `CryptoId` enum in the `crypto.config` package now defines all supported cryptocurrencies. Use these enum values when working with individual cryptocurrencies.
+3. In the `main` method of `CryptoClient`, uncomment, or remove comment, or modify the operations you want to execute.
+   > The major methods are now:
    > * client.updateCurrentData()
-   > * client.updateHistoricalData();
-   > * client.fetchAllHistoricalData({time frame});
+   > * client.updateCurrentData({CryptoId})
+   > * client.updateHistoricalData()
+   > * client.updateHistoricalData({CryptoId})
+   > * client.fetchAllHistoricalData({time-frame})
+   > * client.fetchAllHistoricalData({CryptoId}, {time-frame})
 4. Run the `CryptoClient` as a Java application.
 
 Example usage in `main` method:
@@ -95,17 +99,29 @@ public static void main(String[] args) {
     CryptoClient client = new CryptoClient(config, dataSource, backendService);
 
     try {
-        LOG.info("Updating current crypto data...");
+        LOG.info("Updating current crypto data for all cryptocurrencies...");
         client.updateCurrentData();
-        LOG.info("Current crypto data update completed.");
+        LOG.info("Current crypto data update completed for all cryptocurrencies.");
 
-        LOG.info("Fetching and updating historical data...");
-        // client.updateHistoricalData();
-        LOG.info("Historical data update completed.");
-
-        LOG.info("Fetching all historical data for the last 60 days...");
-        // client.fetchAllHistoricalData(60);
-        LOG.info("All historical data fetch completed.");
+//        LOG.info("Updating current crypto data for Bitcoin...");
+//        client.updateCurrentData(CryptoId.BITCOIN);
+//        LOG.info("Current crypto data update completed for Bitcoin.");
+//
+//        LOG.info("Fetching and updating historical data for all cryptocurrencies...");
+//        client.updateHistoricalData();
+//        LOG.info("Historical data update completed for all cryptocurrencies.");
+//
+//        LOG.info("Fetching and updating historical data for Ethereum...");
+//        client.updateHistoricalData(CryptoId.ETHEREUM);
+//        LOG.info("Historical data update completed for Ethereum.");
+//
+//        LOG.info("Fetching all historical data for the last 60 days for all cryptocurrencies...");
+//        client.fetchAllHistoricalData(60);
+//        LOG.info("All historical data fetch completed for all cryptocurrencies.");
+//
+//        LOG.info("Fetching all historical data for the last 30 days for Cardano...");
+//        client.fetchAllHistoricalData(CryptoId.CARDANO, 30);
+//        LOG.info("All historical data fetch completed for Cardano.");
 
     } catch (Exception e) {
         LOG.error("An error occurred", e);
@@ -121,21 +137,31 @@ The application configuration is managed through the `CryptoConfig` class. This 
 - `coingeckoApiUrl`: The base URL for the Coingecko API
 - `maxRetries`: Maximum number of retries for failed requests
 - `rateLimitDelay`: Delay between requests to respect rate limiting
-- `cryptoIds`: List of cryptocurrency IDs to fetch data for
 
 ### Cryptocurrency IDs
 
-The `cryptoIds` list in `CryptoConfig` specifies which cryptocurrencies the application will track. It's crucial that these IDs match exactly with the identifiers used by the Coingecko API. For example:
+The supported cryptocurrency IDs are now defined in the `CryptoId` enum in the `crypto.config` package. This enum provides a type-safe way to work with cryptocurrency IDs. For example:
 
 ```java
-private final List<String> cryptoIds = Arrays.asList(
-    "bitcoin", "ethereum", "cardano", "polkadot", "chainlink",
-    "stellar", "zcash", "algorand", "bitcoin-diamond", "litecoin",
+public enum CryptoId {
+    BITCOIN("bitcoin"),
+    ETHEREUM("ethereum"),
+    CARDANO("cardano"),
+    POLKADOT("polkadot"),
+    CHAINLINK("chainlink"),
     // ... other cryptocurrencies ...
-);
+}
 ```
 
-To add or remove cryptocurrencies from tracking, modify this list in the `CryptoConfig` class.
+To add or remove cryptocurrencies from tracking, modify this enum in the `CryptoId.java` file. The string value in each enum constant should match exactly with the identifiers used by the Coingecko API.
+
+When using methods that operate on individual cryptocurrencies, use the enum constants. For example:
+
+```java
+client.updateCurrentData(CryptoId.BITCOIN);
+client.updateHistoricalData(CryptoId.ETHEREUM);
+client.fetchAllHistoricalData(CryptoId.CARDANO, 30);
+```
 
 ## API Limitations and Rate Limiting
 
