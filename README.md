@@ -103,25 +103,7 @@ public static void main(String[] args) {
         client.updateCurrentData();
         LOG.info("Current crypto data update completed for all cryptocurrencies.");
 
-//        LOG.info("Updating current crypto data for Bitcoin...");
-//        client.updateCurrentData(CryptoId.BITCOIN);
-//        LOG.info("Current crypto data update completed for Bitcoin.");
-//
-//        LOG.info("Fetching and updating historical data for all cryptocurrencies...");
-//        client.updateHistoricalData();
-//        LOG.info("Historical data update completed for all cryptocurrencies.");
-//
-//        LOG.info("Fetching and updating historical data for Ethereum...");
-//        client.updateHistoricalData(CryptoId.ETHEREUM);
-//        LOG.info("Historical data update completed for Ethereum.");
-//
-//        LOG.info("Fetching all historical data for the last 60 days for all cryptocurrencies...");
-//        client.fetchAllHistoricalData(60);
-//        LOG.info("All historical data fetch completed for all cryptocurrencies.");
-//
-//        LOG.info("Fetching all historical data for the last 30 days for Cardano...");
-//        client.fetchAllHistoricalData(CryptoId.CARDANO, 30);
-//        LOG.info("All historical data fetch completed for Cardano.");
+        // ...
 
     } catch (Exception e) {
         LOG.error("An error occurred", e);
